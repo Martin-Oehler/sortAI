@@ -1,0 +1,33 @@
+# sortAI configuration
+# Copy this file to config/config.toml and adjust the values.
+
+# Folder to watch for incoming PDFs.
+inbox = "C:/Users/Martin/Downloads/sortai-inbox"
+
+# Root of your existing document archive.
+archive = "C:/Users/Martin/Documents/archive"
+
+# Directory containing the prompt markdown files (relative to project root).
+prompts_dir = "prompts"
+
+# Path to the decision log (JSON-lines format).
+log_file = "logs/sortai.jsonl"
+
+# Set to true to simulate all actions without moving any files.
+dry_run = false
+
+# Maximum folder depth the navigation loop will traverse before stopping.
+max_navigate_depth = 10
+
+[lm_studio]
+# Base URL of your LM Studio server.
+base_url = "http://localhost:1234"
+
+# Exact model identifier shown in LM Studio (e.g. "lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF").
+model = "your-model-id-here"
+
+# Sampling temperature (lower = more deterministic).
+temperature = 0.2
+
+# Maximum tokens to generate per completion.
+max_tokens = 2048
