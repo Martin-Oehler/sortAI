@@ -12,7 +12,7 @@ from sortai.cli import main
 PROJECT_ROOT = Path(__file__).parent.parent
 TEST_INBOX = PROJECT_ROOT / "tests" / "fixtures" / "inbox"
 TEST_ARCHIVE = PROJECT_ROOT / "tests" / "fixtures" / "archive"
-REAL_PDF = TEST_INBOX / "Bank Statement Example Final.pdf"
+REAL_PDF = TEST_INBOX / "bank_statement.pdf"
 
 
 @pytest.fixture()
@@ -42,14 +42,14 @@ class TestExtractCommand:
         )
         assert result.exit_code == 0, result.output
 
-    def test_output_contains_bank_statement(self, config_file: Path) -> None:
+    def test_output_contains_account_statement(self, config_file: Path) -> None:
         runner = CliRunner()
         result = runner.invoke(
             main,
             ["--config", str(config_file), "extract", str(REAL_PDF)],
             catch_exceptions=False,
         )
-        assert "Bank Statement" in result.output
+        assert "Account Statement" in result.output
 
     def test_output_does_not_contain_archive_listing(self, config_file: Path) -> None:
         runner = CliRunner()
@@ -82,20 +82,20 @@ class TestTreeCommand:
         )
         assert result.exit_code == 0, result.output
 
-    def test_output_contains_banken(self, config_file: Path) -> None:
+    def test_output_contains_bank(self, config_file: Path) -> None:
         runner = CliRunner()
         result = runner.invoke(
             main,
             ["--config", str(config_file), "tree"],
             catch_exceptions=False,
         )
-        assert "Banken" in result.output
+        assert "bank" in result.output
 
-    def test_output_contains_gesundheit(self, config_file: Path) -> None:
+    def test_output_contains_invoices(self, config_file: Path) -> None:
         runner = CliRunner()
         result = runner.invoke(
             main,
             ["--config", str(config_file), "tree"],
             catch_exceptions=False,
         )
-        assert "Gesundheit" in result.output
+        assert "invoices" in result.output
