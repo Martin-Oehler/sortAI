@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 from rich.console import Console
 from rich.table import Table
+from rich.tree import Tree
 
 console = Console()
 
@@ -69,19 +70,37 @@ def show_config(ctx: click.Context) -> None:
 # Stub commands — to be implemented in later phases
 # ---------------------------------------------------------------------------
 
-@main.command("inspect")
+@main.command("extract")
 @click.argument("pdf_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("-n", "max_chars", default=500, show_default=True, help="Max characters of extracted text to display.")
 @click.pass_context
-def inspect_pdf(ctx: click.Context, pdf_file: Path) -> None:
-    """[Phase 2] Show extracted text and archive listing for a PDF."""
-    console.print("[yellow]Not yet implemented (Phase 2).[/yellow]")
+def extract_pdf(ctx: click.Context, pdf_file: Path, max_chars: int) -> None:
+    """Extract and display text content from a PDF."""
+    from sortai.pdf_reader import extract_text
+
+    text = extract_text(pdf_file)
+    console.print(f"\n[bold cyan]Extracted text[/bold cyan] ({len(text)} chars total):\n")
+    console.print(text[:max_chars])
+    if len(text) > max_chars:
+        console.print(f"\n[dim]… {len(text) - max_chars} more chars omitted[/dim]")
+
+
+def _build_rich_tree(branch: Tree, path: Path) -> None:
+    from sortai.folder_navigator import list_children
+
+    for name in list_children(path):
+        sub = branch.add(f"[green]{name}[/green]")
+        _build_rich_tree(sub, path / name)
 
 
 @main.command("tree")
 @click.pass_context
 def show_tree(ctx: click.Context) -> None:
-    """[Phase 2] Pretty-print the document archive folder tree."""
-    console.print("[yellow]Not yet implemented (Phase 2).[/yellow]")
+    """Pretty-print the document archive folder tree."""
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    root = Tree(f"[bold]{cfg.archive}[/bold]")
+    _build_rich_tree(root, cfg.archive)
+    console.print(root)
 
 
 @main.command("ping")
