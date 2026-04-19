@@ -10,8 +10,8 @@ from click.testing import CliRunner
 from sortai.cli import main
 
 PROJECT_ROOT = Path(__file__).parent.parent
-TEST_INBOX = PROJECT_ROOT / "test" / "inbox"
-TEST_ARCHIVE = PROJECT_ROOT / "test" / "archive"
+TEST_INBOX = PROJECT_ROOT / "tests" / "fixtures" / "inbox"
+TEST_ARCHIVE = PROJECT_ROOT / "tests" / "fixtures" / "archive"
 REAL_PDF = TEST_INBOX / "Bank Statement Example Final.pdf"
 
 
