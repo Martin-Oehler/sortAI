@@ -133,8 +133,9 @@ def ping_lm_studio(ctx: click.Context) -> None:
 @main.command("process")
 @click.argument("pdf_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Print full prompt/response for each LLM call.")
+@click.option("--warm", is_flag=True, default=False, help="Keep model loaded after processing (skips unload).")
 @click.pass_context
-def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool) -> None:
+def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -> None:
     """Run the full LLM pipeline on a single PDF (prints proposed destination)."""
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
     from sortai.llm_client import LMStudioClient
@@ -150,11 +151,15 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool) -> None:
 
     try:
         console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
-        with client:
-            pipeline = Pipeline(cfg, client, verbose=verbose)
-            console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")
-            target_folder, filename = pipeline.run(pdf_file)
-        console.print("[cyan]Model unloaded.[/cyan]")
+        client.load_model()
+        pipeline = Pipeline(cfg, client, verbose=verbose)
+        console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")
+        target_folder, filename = pipeline.run(pdf_file)
+        if warm:
+            console.print("[cyan]Model kept loaded (--warm).[/cyan]")
+        else:
+            client.unload_model()
+            console.print("[cyan]Model unloaded.[/cyan]")
         dest = target_folder / filename
         console.print(f"\n[bold green]→[/bold green] {dest}\n")
     except RuntimeError as exc:
