@@ -71,7 +71,7 @@ class TestPostV0:
         # timeout is passed as a keyword argument to urlopen
         assert mock_open.call_args.kwargs["timeout"] == 300
 
-    def test_unload_model_posts_correct_url_and_payload(self, tmp_path: Path) -> None:
+    def test_unload_model_sends_delete_to_correct_url(self, tmp_path: Path) -> None:
         client = _make_client(tmp_path)
         mock_resp = _fake_urlopen_response(b"{}")
 
@@ -79,9 +79,8 @@ class TestPostV0:
             client.unload_model()
 
         req = mock_open.call_args[0][0]
-        assert req.full_url == f"{BASE_URL}/api/v0/models/unload"
-        assert req.get_method() == "POST"
-        assert json.loads(req.data) == {"identifier": MODEL}
+        assert req.full_url == f"{BASE_URL}/api/v0/models/{MODEL}"
+        assert req.get_method() == "DELETE"
 
     def test_unload_model_uses_60s_timeout(self, tmp_path: Path) -> None:
         client = _make_client(tmp_path)
@@ -90,7 +89,6 @@ class TestPostV0:
         with patch("sortai.llm_client.urllib.request.urlopen", return_value=mock_resp) as mock_open:
             client.unload_model()
 
-        # timeout is passed as a keyword argument to urlopen
         assert mock_open.call_args.kwargs["timeout"] == 60
 
     def test_http_error_raises_runtime_error(self, tmp_path: Path) -> None:

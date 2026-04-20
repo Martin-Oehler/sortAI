@@ -40,8 +40,8 @@ class LMStudioClient:
         self._post_v0("models/load", {"identifier": self.model_name}, timeout=300)
 
     def unload_model(self) -> None:
-        """POST /api/v0/models/unload to release the model from GPU memory."""
-        self._post_v0("models/unload", {"identifier": self.model_name}, timeout=60)
+        """DELETE /api/v0/models/{identifier} to release the model from GPU memory."""
+        self._delete_v0(f"models/{self.model_name}", timeout=60)
 
     # ------------------------------------------------------------------
     # Completion
@@ -89,6 +89,19 @@ class LMStudioClient:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _delete_v0(self, endpoint: str, timeout: int = 60) -> dict:
+        url = f"{self.base_url}/api/v0/{endpoint}"
+        req = urllib.request.Request(url, method="DELETE")
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = resp.read()
+                return json.loads(body) if body else {}
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode(errors="replace")
+            raise RuntimeError(
+                f"LM Studio API error {exc.code} on DELETE /{endpoint}: {body}"
+            ) from exc
 
     def _post_v0(self, endpoint: str, payload: dict, timeout: int = 60) -> dict:
         url = f"{self.base_url}/api/v0/{endpoint}"
