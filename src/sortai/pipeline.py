@@ -5,6 +5,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.rule import Rule
+
 from sortai.config import Config
 from sortai.folder_navigator import is_leaf, list_children
 from sortai.llm_client import LMStudioClient
@@ -34,21 +39,32 @@ def _sanitize_filename(raw: str) -> str:
 
 
 class Pipeline:
-    def __init__(self, config: Config, client: LMStudioClient) -> None:
+    def __init__(self, config: Config, client: LMStudioClient, verbose: bool = False) -> None:
         self.config = config
         self.client = client
+        self.verbose = verbose
+        self._console = Console()
+
+    def _log_exchange(self, stage: str, prompt: str, response: str) -> None:
+        self._console.print(Rule(f"[bold cyan]{stage}[/bold cyan]"))
+        self._console.print(Panel(Markdown(prompt), title="[dim]prompt[/dim]", border_style="dim"))
+        self._console.print(Panel(response.strip(), title="[dim]response[/dim]", border_style="green"))
 
     def summarize(self, text: str) -> str:
         """Stage 1 — summarize the document text."""
         template = self.client.load_prompt("summarize")
         prompt = template.replace("{{document_text}}", _truncate(text))
-        return self.client.complete(prompt).strip()
+        result = self.client.complete(prompt).strip()
+        if self.verbose:
+            self._log_exchange("Stage 1 — Summarize", prompt, result)
+        return result
 
     def navigate_to_folder(self, text: str, summary: str) -> Path:
         """Stage 2 — walk the archive tree to find the best target folder."""
         template = self.client.load_prompt("navigate")
         current = self.config.archive
         short_text = _truncate(text)
+        step = 0
 
         for _ in range(self.config.max_navigate_depth):
             children = list_children(current)
@@ -64,6 +80,9 @@ class Pipeline:
                 .replace("{{document_text}}", short_text)
             )
             choice = self.client.complete(prompt).strip().splitlines()[0].strip()
+            step += 1
+            if self.verbose:
+                self._log_exchange(f"Stage 2 — Navigate (step {step})", prompt, choice)
 
             if choice == "." or choice not in children:
                 break
@@ -86,7 +105,10 @@ class Pipeline:
             .replace("{{document_text}}", _truncate(text))
         )
         raw = self.client.complete(prompt).strip()
-        return _sanitize_filename(raw)
+        result = _sanitize_filename(raw)
+        if self.verbose:
+            self._log_exchange("Stage 3 — Name file", prompt, raw)
+        return result
 
     def run(self, pdf_path: Path) -> tuple[Path, str]:
         """Run all three stages and return (target_folder, filename)."""
