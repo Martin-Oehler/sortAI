@@ -134,8 +134,31 @@ def ping_lm_studio(ctx: click.Context) -> None:
 @click.argument("pdf_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.pass_context
 def process_pdf(ctx: click.Context, pdf_file: Path) -> None:
-    """[Phase 4/5] Run the full pipeline on a single PDF."""
-    console.print("[yellow]Not yet implemented (Phase 4).[/yellow]")
+    """Run the full LLM pipeline on a single PDF (prints proposed destination)."""
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    from sortai.llm_client import LMStudioClient
+    from sortai.pipeline import Pipeline
+
+    client = LMStudioClient(
+        base_url=cfg.lm_studio.base_url,
+        model_name=cfg.lm_studio.model,
+        prompts_dir=cfg.prompts_dir,
+        temperature=cfg.lm_studio.temperature,
+        max_tokens=cfg.lm_studio.max_tokens,
+    )
+
+    try:
+        console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
+        with client:
+            pipeline = Pipeline(cfg, client)
+            console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")
+            target_folder, filename = pipeline.run(pdf_file)
+        console.print("[cyan]Model unloaded.[/cyan]")
+        dest = target_folder / filename
+        console.print(f"\n[bold green]→[/bold green] {dest}\n")
+    except RuntimeError as exc:
+        console.print(f"\n[bold red]Error:[/bold red] {exc}")
+        raise SystemExit(1)
 
 
 @main.command("log")
