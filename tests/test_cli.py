@@ -1,8 +1,9 @@
-"""Tests for sortai CLI commands: extract and tree."""
+"""Tests for sortai CLI commands: extract, tree, and ping."""
 from __future__ import annotations
 
 import textwrap
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -99,3 +100,72 @@ class TestTreeCommand:
             catch_exceptions=False,
         )
         assert "invoices" in result.output
+
+
+class TestPingCommand:
+    def test_ping_exits_zero(self, config_file: Path) -> None:
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.complete.return_value = "Hello from LM Studio!"
+
+        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
+            runner = CliRunner()
+            result = runner.invoke(
+                main,
+                ["--config", str(config_file), "ping"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+
+    def test_ping_prints_response(self, config_file: Path) -> None:
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.complete.return_value = "Hello from LM Studio!"
+
+        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
+            runner = CliRunner()
+            result = runner.invoke(
+                main,
+                ["--config", str(config_file), "ping"],
+                catch_exceptions=False,
+            )
+
+        assert "Hello from LM Studio!" in result.output
+
+    def test_ping_calls_complete_with_hello_prompt(self, config_file: Path) -> None:
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.complete.return_value = "Hi!"
+
+        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
+            runner = CliRunner()
+            runner.invoke(
+                main,
+                ["--config", str(config_file), "ping"],
+                catch_exceptions=False,
+            )
+
+        mock_client.complete.assert_called_once()
+        call_args = mock_client.complete.call_args[0]
+        assert "Hello" in call_args[0]
+
+    def test_ping_uses_context_manager(self, config_file: Path) -> None:
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.complete.return_value = "Hi!"
+
+        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client) as MockClient:
+            runner = CliRunner()
+            runner.invoke(
+                main,
+                ["--config", str(config_file), "ping"],
+                catch_exceptions=False,
+            )
+
+        mock_client.__enter__.assert_called_once()
+        mock_client.__exit__.assert_called_once()
