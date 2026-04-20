@@ -51,6 +51,21 @@ temperature = 0.2
 max_tokens  = 2048
 ```
 
+## Setting up LM Studio
+
+1. Download and install [LM Studio](https://lmstudio.ai/).
+2. Download a model inside LM Studio (e.g. `google/gemma-4-e4b`).
+3. Set the downloaded model's identifier as `model` in `config/config.toml`.
+4. Start the local server:
+   - Click the **Developer** tab in the left sidebar.
+   - Click the toggle next to **Status: Stopped** to start the server.
+   - The status should change to **Running** on port `1234`.
+5. Verify the connection:
+   ```bash
+   sortai ping
+   ```
+   You should see the model load, a short response from the LLM, and a confirmation that the model was unloaded.
+
 ## CLI reference
 
 ```
@@ -62,7 +77,7 @@ sortai [--config FILE] [--dry-run] COMMAND
 | `sortai config` | Print current configuration |
 | `sortai extract PDF_FILE [-n MAX_CHARS]` | Extract and display text from a PDF |
 | `sortai tree` | Print the archive folder tree |
-| `sortai ping` | *(planned)* Test LM Studio connection |
+| `sortai ping` | Test LM Studio connection (load, hello, unload) |
 | `sortai process PDF_FILE` | *(planned)* Run the full sort pipeline |
 | `sortai watch [--once]` | *(planned)* Watch inbox and auto-process |
 
@@ -74,6 +89,9 @@ sortai extract ~/Downloads/invoice.pdf -n 1000
 
 # Show the archive folder structure
 sortai tree
+
+# Test the LM Studio connection
+sortai ping
 
 # Simulate a sort without moving files
 sortai --dry-run process ~/Downloads/invoice.pdf
