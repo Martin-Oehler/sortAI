@@ -2,16 +2,16 @@
 
 Automatically sort PDFs into an existing folder hierarchy using a locally-running LLM. sortAI reads each document, navigates your archive structure, picks the right folder, and generates an appropriate filename — all without moving anything to the cloud.
 
-> **Status:** Phases 1–2 complete (PDF reading, archive traversal, CLI scaffold). Phases 3–6 (LLM pipeline, file operations, inbox watcher) are in progress.
+> **This project is WIP**
 
 ## How it works
 
 1. **Extract** — reads the text content of a PDF
 2. **Navigate** — traverses your archive folder tree to find the best target
 3. **Name** — generates a descriptive filename
-4. **Move** — places the file (or simulates with `--dry-run`)
+4. **Move** — places the file
 
-An LM Studio server provides the local LLM for steps 2–3.
+An LM Studio server provides the local LLM.
 
 ## Requirements
 
@@ -90,8 +90,6 @@ Run with verbose output and coverage:
 ```bash
 pytest tests/ -v --cov=src/sortai
 ```
-
-The suite currently has 17 tests covering PDF extraction, archive traversal, and all implemented CLI commands.
 
 ## License
 
