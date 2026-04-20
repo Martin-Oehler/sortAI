@@ -36,8 +36,8 @@ class LMStudioClient:
     # ------------------------------------------------------------------
 
     def load_model(self) -> None:
-        """POST /api/v0/models/load to ask LM Studio to load the model."""
-        self._post_v0("models/load", {"identifier": self.model_name}, timeout=300)
+        """POST /api/v1/models/load to ask LM Studio to load the model."""
+        self._post_v1("models/load", {"model": self.model_name}, timeout=300)
 
     def unload_model(self) -> None:
         """POST /api/v1/models/unload to release the model from GPU memory."""

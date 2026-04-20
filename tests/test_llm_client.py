@@ -56,9 +56,9 @@ class TestPostV0:
 
         assert mock_open.call_count == 1
         req = mock_open.call_args[0][0]
-        assert req.full_url == f"{BASE_URL}/api/v0/models/load"
+        assert req.full_url == f"{BASE_URL}/api/v1/models/load"
         assert req.get_method() == "POST"
-        assert json.loads(req.data) == {"identifier": MODEL}
+        assert json.loads(req.data) == {"model": MODEL}
         assert req.get_header("Content-type") == "application/json"
 
     def test_load_model_uses_300s_timeout(self, tmp_path: Path) -> None:
