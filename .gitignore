@@ -1,4 +1,5 @@
-test/
+plans/
+.claude
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
