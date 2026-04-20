@@ -16,7 +16,7 @@ An LM Studio server provides the local LLM.
 ## Requirements
 
 - Python 3.11+
-- [LM Studio](https://lmstudio.ai/) running locally (for the full pipeline)
+- [LM Studio](https://lmstudio.ai/) running locally
 
 ## Getting started
 
