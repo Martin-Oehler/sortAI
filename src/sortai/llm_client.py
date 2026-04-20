@@ -40,8 +40,8 @@ class LMStudioClient:
         self._post_v0("models/load", {"identifier": self.model_name}, timeout=300)
 
     def unload_model(self) -> None:
-        """DELETE /api/v0/models/{identifier} to release the model from GPU memory."""
-        self._delete_v0(f"models/{self.model_name}", timeout=60)
+        """POST /api/v1/models/unload to release the model from GPU memory."""
+        self._post_v1("models/unload", {"instance_id": self.model_name}, timeout=60)
 
     # ------------------------------------------------------------------
     # Completion
@@ -90,21 +90,9 @@ class LMStudioClient:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _delete_v0(self, endpoint: str, timeout: int = 60) -> dict:
-        url = f"{self.base_url}/api/v0/{endpoint}"
-        req = urllib.request.Request(url, method="DELETE")
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                body = resp.read()
-                return json.loads(body) if body else {}
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode(errors="replace")
-            raise RuntimeError(
-                f"LM Studio API error {exc.code} on DELETE /{endpoint}: {body}"
-            ) from exc
-
-    def _post_v0(self, endpoint: str, payload: dict, timeout: int = 60) -> dict:
-        url = f"{self.base_url}/api/v0/{endpoint}"
+    def _post(self, api_path: str, payload: dict, timeout: int = 60) -> dict:
+        """POST JSON payload to an arbitrary LM Studio API path."""
+        url = f"{self.base_url}/{api_path}"
         data = json.dumps(payload).encode()
         req = urllib.request.Request(
             url,
@@ -119,5 +107,11 @@ class LMStudioClient:
         except urllib.error.HTTPError as exc:
             body = exc.read().decode(errors="replace")
             raise RuntimeError(
-                f"LM Studio API error {exc.code} on POST /{endpoint}: {body}"
+                f"LM Studio API error {exc.code} on POST /{api_path}: {body}"
             ) from exc
+
+    def _post_v0(self, endpoint: str, payload: dict, timeout: int = 60) -> dict:
+        return self._post(f"api/v0/{endpoint}", payload, timeout)
+
+    def _post_v1(self, endpoint: str, payload: dict, timeout: int = 60) -> dict:
+        return self._post(f"api/v1/{endpoint}", payload, timeout)
