@@ -118,12 +118,16 @@ def ping_lm_studio(ctx: click.Context) -> None:
         max_tokens=cfg.lm_studio.max_tokens,
     )
 
-    console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
-    with client:
-        console.print("[cyan]Sending hello…[/cyan]")
-        reply = client.complete("Hello! Please respond with a single short sentence.")
-        console.print(f"\n[bold green]Response:[/bold green] {reply}\n")
-    console.print("[cyan]Model unloaded.[/cyan]")
+    try:
+        console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
+        with client:
+            console.print("[cyan]Sending hello…[/cyan]")
+            reply = client.complete("Hello! Please respond with a single short sentence.")
+            console.print(f"\n[bold green]Response:[/bold green] {reply}\n")
+        console.print("[cyan]Model unloaded.[/cyan]")
+    except RuntimeError as exc:
+        console.print(f"\n[bold red]Error:[/bold red] {exc}")
+        raise SystemExit(1)
 
 
 @main.command("process")
