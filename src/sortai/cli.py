@@ -150,7 +150,10 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
     )
 
     try:
-        console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
+        if client.is_model_loaded():
+            console.print(f"[cyan]Model already loaded:[/cyan] [bold]{cfg.lm_studio.model}[/bold]")
+        else:
+            console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
         client.load_model()
         pipeline = Pipeline(cfg, client, verbose=verbose)
         console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")

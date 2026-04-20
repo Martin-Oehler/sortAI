@@ -35,9 +35,15 @@ class LMStudioClient:
     # Model lifecycle
     # ------------------------------------------------------------------
 
+    def is_model_loaded(self) -> bool:
+        """Return True if the model is already loaded in LM Studio."""
+        models = self._openai.models.list()
+        return any(m.id == self.model_name for m in models.data)
+
     def load_model(self) -> None:
-        """POST /api/v1/models/load to ask LM Studio to load the model."""
-        self._post_v1("models/load", {"model": self.model_name}, timeout=300)
+        """POST /api/v1/models/load — no-op if the model is already loaded."""
+        if not self.is_model_loaded():
+            self._post_v1("models/load", {"model": self.model_name}, timeout=300)
 
     def unload_model(self) -> None:
         """POST /api/v1/models/unload to release the model from GPU memory."""
