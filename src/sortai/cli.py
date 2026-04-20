@@ -106,8 +106,24 @@ def show_tree(ctx: click.Context) -> None:
 @main.command("ping")
 @click.pass_context
 def ping_lm_studio(ctx: click.Context) -> None:
-    """[Phase 3] Test LM Studio connection (load model, send hello, unload)."""
-    console.print("[yellow]Not yet implemented (Phase 3).[/yellow]")
+    """Test LM Studio connection: load model, send hello, print response, unload."""
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    from sortai.llm_client import LMStudioClient
+
+    client = LMStudioClient(
+        base_url=cfg.lm_studio.base_url,
+        model_name=cfg.lm_studio.model,
+        prompts_dir=cfg.prompts_dir,
+        temperature=cfg.lm_studio.temperature,
+        max_tokens=cfg.lm_studio.max_tokens,
+    )
+
+    console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
+    with client:
+        console.print("[cyan]Sending hello…[/cyan]")
+        reply = client.complete("Hello! Please respond with a single short sentence.")
+        console.print(f"\n[bold green]Response:[/bold green] {reply}\n")
+    console.print("[cyan]Model unloaded.[/cyan]")
 
 
 @main.command("process")
