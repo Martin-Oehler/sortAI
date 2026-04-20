@@ -109,6 +109,13 @@ class LMStudioClient:
             raise RuntimeError(
                 f"LM Studio API error {exc.code} on POST /{api_path}: {body}"
             ) from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"Cannot reach LM Studio at {self.base_url}.\n"
+                "Make sure the local server is running:\n"
+                "  1. Open LM Studio and click the Developer tab in the left sidebar.\n"
+                "  2. Click the toggle next to 'Status: Stopped' to start the server."
+            ) from exc
 
     def _post_v0(self, endpoint: str, payload: dict, timeout: int = 60) -> dict:
         return self._post(f"api/v0/{endpoint}", payload, timeout)

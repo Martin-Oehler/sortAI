@@ -125,6 +125,18 @@ class TestPostV0:
             with pytest.raises(RuntimeError, match="bad identifier"):
                 client.load_model()
 
+    def test_connection_refused_gives_helpful_message(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path)
+        url_error = urllib.error.URLError(ConnectionRefusedError(10061, "Connection refused"))
+
+        with patch("sortai.llm_client.urllib.request.urlopen", side_effect=url_error):
+            with pytest.raises(RuntimeError) as exc_info:
+                client.load_model()
+
+        msg = str(exc_info.value)
+        assert BASE_URL in msg
+        assert "Developer" in msg
+
     def test_base_url_trailing_slash_is_stripped(self, tmp_path: Path) -> None:
         """Trailing slash on base_url must not produce double slashes in the URL."""
         with patch("sortai.llm_client.OpenAI"):
