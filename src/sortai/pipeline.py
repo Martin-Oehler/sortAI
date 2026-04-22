@@ -110,10 +110,10 @@ class Pipeline:
             self._log_exchange("Stage 3 — Name file", prompt, raw)
         return result
 
-    def run(self, pdf_path: Path) -> tuple[Path, str]:
-        """Run all three stages and return (target_folder, filename)."""
+    def run(self, pdf_path: Path) -> tuple[Path, str, str]:
+        """Run all three stages and return (target_folder, filename, summary)."""
         text = extract_text(pdf_path)
         summary = self.summarize(text)
         target_folder = self.navigate_to_folder(text, summary)
         filename = self.choose_filename(text, summary, target_folder)
-        return target_folder, filename
+        return target_folder, filename, summary

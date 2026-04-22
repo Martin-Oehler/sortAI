@@ -157,25 +157,91 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
         client.load_model()
         pipeline = Pipeline(cfg, client, verbose=verbose)
         console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")
-        target_folder, filename = pipeline.run(pdf_file)
+        target_folder, filename, summary = pipeline.run(pdf_file)
         if warm:
             console.print("[cyan]Model kept loaded (--warm).[/cyan]")
         else:
             client.unload_model()
             console.print("[cyan]Model unloaded.[/cyan]")
-        dest = target_folder / filename
-        console.print(f"\n[bold green]→[/bold green] {dest}\n")
+        from sortai.file_ops import log_decision, move_file
+        dest = move_file(
+            src=pdf_file.resolve(),
+            dest_dir=target_folder,
+            new_name=filename,
+            dry_run=cfg.dry_run,
+        )
+        log_decision(
+            src=pdf_file.resolve(),
+            dest=dest,
+            summary=summary,
+            dry_run=cfg.dry_run,
+            log_path=cfg.log_file,
+            archive_root=cfg.archive,
+        )
+        label = "[dim](dry run)[/dim] " if cfg.dry_run else ""
+        console.print(f"\n[bold green]→[/bold green] {label}{dest}")
+        html_path = cfg.log_file.with_name(cfg.log_file.stem + "_report.html")
+        console.print(f"[dim]Report: {html_path}[/dim]\n")
     except RuntimeError as exc:
         console.print(f"\n[bold red]Error:[/bold red] {exc}")
         raise SystemExit(1)
 
 
 @main.command("log")
-@click.option("-n", "count", default=20, show_default=True, help="Number of entries to show.")
+@click.option("-n", "count", default=20, show_default=True, help="Number of recent entries to show.")
 @click.pass_context
 def show_log(ctx: click.Context, count: int) -> None:
-    """[Phase 5] Show recent log entries."""
-    console.print("[yellow]Not yet implemented (Phase 5).[/yellow]")
+    """Show recent sort decisions from the log."""
+    from sortai.file_ops import dest_label, load_jsonl_entries
+
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    log_path = cfg.log_file
+
+    if not log_path.exists():
+        console.print("[yellow]No log file found. Run 'sortai process' first.[/yellow]")
+        return
+
+    entries = load_jsonl_entries(log_path)
+    recent = entries[-count:]
+
+    table = Table(
+        title=f"sortAI log — last {len(recent)} of {len(entries)} entries",
+        show_lines=True,
+    )
+    table.add_column("Timestamp", style="dim", no_wrap=True)
+    table.add_column("Original", style="cyan")
+    table.add_column("Destination", style="green")
+    table.add_column("Summary")
+    table.add_column("Dry", justify="center")
+
+    for e in recent:
+        orig = Path(e.get("original_path", "")).name
+        dest = dest_label(e.get("new_path", ""), e.get("archive_root"))
+        ts = e.get("timestamp", "")[:19]
+        raw_summary = e.get("summary", "")
+        summary_cell = raw_summary[:80] + ("…" if len(raw_summary) > 80 else "")
+        dry_marker = "[yellow]Y[/yellow]" if e.get("dry_run") else "N"
+        table.add_row(ts, orig, dest, summary_cell, dry_marker)
+
+    console.print(table)
+
+
+@main.command("report")
+@click.pass_context
+def generate_report(ctx: click.Context) -> None:
+    """Regenerate the HTML audit report from the existing JSONL log."""
+    from sortai.file_ops import render_html_report
+
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    log_path = cfg.log_file
+
+    if not log_path.exists():
+        console.print(f"[yellow]No log file found at[/yellow] {log_path}")
+        raise SystemExit(1)
+
+    render_html_report(log_path)
+    html_path = log_path.with_name(log_path.stem + "_report.html")
+    console.print(f"[bold green]Report written:[/bold green] {html_path}")
 
 
 @main.command("watch")
