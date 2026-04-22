@@ -39,12 +39,14 @@ def log_decision(
     summary: str,
     dry_run: bool,
     log_path: Path,
+    archive_root: Path | None = None,
 ) -> None:
     """Append a JSON-lines entry to *log_path* and regenerate the HTML report."""
     entry = {
         "timestamp": datetime.now().isoformat(),
         "original_path": str(src.resolve()),
         "new_path": str(dest.resolve()),
+        "archive_root": str(archive_root.resolve()) if archive_root else None,
         "summary": summary,
         "dry_run": dry_run,
     }
@@ -167,12 +169,24 @@ def _build_rows(entries: list[dict]) -> str:
         is_dry = e.get("dry_run", False)
 
         orig_name = _esc(Path(orig_path).name) if orig_path else ""
-        new_name = _esc(Path(new_path).name) if new_path else ""
         orig_path_attr = _esc(orig_path)
         new_path_attr = _esc(new_path)
 
+        # Build visible destination label: relative_folder/filename when archive
+        # root is known, otherwise just the filename.
+        new_p = Path(new_path) if new_path else Path()
+        archive_root_str = e.get("archive_root")
+        if archive_root_str and new_path:
+            try:
+                rel = new_p.relative_to(archive_root_str)
+                dest_label = _esc(str(rel).replace("\\", "/"))
+            except ValueError:
+                dest_label = _esc(new_p.name)
+        else:
+            dest_label = _esc(new_p.name)
+
         try:
-            dest_uri = _esc(Path(new_path).as_uri())
+            dest_uri = _esc(new_p.as_uri())
         except ValueError:
             dest_uri = "#"
 
@@ -185,7 +199,7 @@ def _build_rows(entries: list[dict]) -> str:
             f'      <tr class="entry{dry_class}">\n'
             f'        <td class="ts">{ts}</td>\n'
             f'        <td class="path" title="{orig_path_attr}">{orig_name}</td>\n'
-            f'        <td class="path" title="{new_path_attr}"><a href="{dest_uri}">{new_name}</a></td>\n'
+            f'        <td class="path" title="{new_path_attr}"><a href="{dest_uri}">{dest_label}</a></td>\n'
             f'        <td><details><summary>{short_summary}</summary><p>{full_summary}</p></details></td>\n'
             f'        <td class="dry">{dry_text}</td>\n'
             f'      </tr>'

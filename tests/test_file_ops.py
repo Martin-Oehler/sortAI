@@ -242,6 +242,36 @@ class TestRenderHtmlReport:
         html = _html_path(log_path).read_text(encoding="utf-8")
         assert 'href="file:///' in html
 
+    def test_shows_relative_path_when_archive_root_present(self, tmp_path: Path):
+        archive = tmp_path / "archive"
+        dest = archive / "Finance" / "Invoices" / "acme_2026.pdf"
+        entry = {
+            "timestamp": "2026-04-22T10:00:00",
+            "original_path": str(tmp_path / "inbox" / "acme.pdf"),
+            "new_path": str(dest),
+            "archive_root": str(archive),
+            "summary": "s",
+            "dry_run": False,
+        }
+        log_path = self._make_log(tmp_path, [entry])
+        render_html_report(log_path)
+        html = _html_path(log_path).read_text(encoding="utf-8")
+        assert "Finance/Invoices/acme_2026.pdf" in html
+
+    def test_falls_back_to_filename_without_archive_root(self, tmp_path: Path):
+        dest = tmp_path / "archive" / "Finance" / "acme_2026.pdf"
+        entry = {
+            "timestamp": "2026-04-22T10:00:00",
+            "original_path": str(tmp_path / "inbox" / "acme.pdf"),
+            "new_path": str(dest),
+            "summary": "s",
+            "dry_run": False,
+        }
+        log_path = self._make_log(tmp_path, [entry])
+        render_html_report(log_path)
+        html = _html_path(log_path).read_text(encoding="utf-8")
+        assert "acme_2026.pdf" in html
+
     def test_html_escapes_special_chars_in_summary(self, tmp_path: Path):
         entry = {
             "timestamp": "2026-04-22T10:00:00",
