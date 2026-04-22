@@ -164,7 +164,7 @@ def _build_html(entries: list[dict]) -> str:
         row.style.display = row.textContent.toLowerCase().includes(f) ? '' : 'none';
       }});
     }}
-    var _sortDir = {{}};
+    var _sortDir = {{0: 'desc'}};
     var _labels = ['Timestamp','Original file','Destination file','Summary','Dry run'];
     function sortTable(col) {{
       var tbody = document.querySelector('#logTable tbody');
@@ -181,6 +181,9 @@ def _build_html(entries: list[dict]) -> str:
         th.textContent = _labels[i] + (i === col ? (dir === 'asc' ? ' △' : ' ▽') : '');
       }});
     }}
+    document.addEventListener('DOMContentLoaded', function() {{
+      document.querySelector('#logTable thead th').textContent = _labels[0] + ' ▽';
+    }});
   </script>
 </body>
 </html>"""
