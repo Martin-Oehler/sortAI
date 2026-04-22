@@ -1,7 +1,5 @@
 # Folder Navigation Prompt
 
-<!-- Stage 2 of 3 — filled in Phase 4 -->
-
 You are a filing assistant. Your task is to identify the single best sub-folder for the document described below.
 
 You are currently looking at the folder: **{{current_folder}}**
