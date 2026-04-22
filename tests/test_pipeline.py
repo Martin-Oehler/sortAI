@@ -380,7 +380,7 @@ class TestRun:
         pdf_path = tmp_path / "test.pdf"
 
         with patch("sortai.pipeline.extract_text", return_value="extracted text") as mock_extract:
-            target, name = pipeline.run(pdf_path)
+            target, name, summary = pipeline.run(pdf_path)
 
         mock_extract.assert_called_once_with(pdf_path)
         # Three LLM completions: summarize, navigate, name
@@ -411,9 +411,10 @@ class TestRun:
             result = pipeline.run(tmp_path / "doc.pdf")
 
         assert isinstance(result, tuple)
-        assert len(result) == 2
+        assert len(result) == 3
         assert isinstance(result[0], Path)
         assert isinstance(result[1], str)
+        assert isinstance(result[2], str)
 
     def test_summary_passed_to_navigate_and_name(self, tmp_path: Path):
         """The summary returned from stage 1 is used in stages 2 and 3."""
@@ -446,6 +447,6 @@ class TestRun:
         pipeline = Pipeline(make_config(tmp_path), client)
 
         with patch("sortai.pipeline.extract_text", return_value="text"):
-            target, _ = pipeline.run(tmp_path / "doc.pdf")
+            target, *_ = pipeline.run(tmp_path / "doc.pdf")
 
         assert target == tmp_path / "contracts"
