@@ -146,7 +146,7 @@ def _build_html(entries: list[dict]) -> str:
   <table id="logTable">
     <thead>
       <tr>
-        <th onclick="sortTable(0)">Timestamp &#9661;</th>
+        <th onclick="sortTable(0)">Timestamp</th>
         <th onclick="sortTable(1)">Original file</th>
         <th onclick="sortTable(2)">Destination file</th>
         <th onclick="sortTable(3)">Summary</th>
@@ -165,6 +165,7 @@ def _build_html(entries: list[dict]) -> str:
       }});
     }}
     var _sortDir = {{}};
+    var _labels = ['Timestamp','Original file','Destination file','Summary','Dry run'];
     function sortTable(col) {{
       var tbody = document.querySelector('#logTable tbody');
       var rows = Array.from(tbody.rows);
@@ -176,6 +177,9 @@ def _build_html(entries: list[dict]) -> str:
         return dir === 'asc' ? at.localeCompare(bt) : bt.localeCompare(at);
       }});
       rows.forEach(function(r) {{ tbody.appendChild(r); }});
+      document.querySelectorAll('#logTable thead th').forEach(function(th, i) {{
+        th.textContent = _labels[i] + (i === col ? (dir === 'asc' ? ' △' : ' ▽') : '');
+      }});
     }}
   </script>
 </body>
