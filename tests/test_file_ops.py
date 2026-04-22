@@ -192,6 +192,18 @@ class TestRenderHtmlReport:
         assert "invoice_acme.pdf" in html
         assert "Acme Corp invoice April 2026" in html
 
+    def test_newest_entry_appears_first(self, tmp_path: Path):
+        entries = [
+            {"timestamp": "2026-01-01T10:00:00", "original_path": "/old.pdf",
+             "new_path": "/archive/old.pdf", "summary": "old", "dry_run": False},
+            {"timestamp": "2026-04-22T10:00:00", "original_path": "/new.pdf",
+             "new_path": "/archive/new.pdf", "summary": "new", "dry_run": False},
+        ]
+        log_path = self._make_log(tmp_path, entries)
+        render_html_report(log_path)
+        html = _html_path(log_path).read_text(encoding="utf-8")
+        assert html.index("new.pdf") < html.index("old.pdf")
+
     def test_html_is_valid_structure(self, tmp_path: Path):
         log_path = self._make_log(tmp_path, [])
         render_html_report(log_path)

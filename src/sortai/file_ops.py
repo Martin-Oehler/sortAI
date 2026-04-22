@@ -84,7 +84,7 @@ def _build_html(entries: list[dict]) -> str:
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     total = len(entries)
     dry_run_count = sum(1 for e in entries if e.get("dry_run"))
-    rows = _build_rows(entries)
+    rows = _build_rows(list(reversed(entries)))
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -123,7 +123,7 @@ def _build_html(entries: list[dict]) -> str:
   <table id="logTable">
     <thead>
       <tr>
-        <th onclick="sortTable(0)">Timestamp &#9651;</th>
+        <th onclick="sortTable(0)">Timestamp &#9661;</th>
         <th onclick="sortTable(1)">Original file</th>
         <th onclick="sortTable(2)">Destination file</th>
         <th onclick="sortTable(3)">Summary</th>
