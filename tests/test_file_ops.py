@@ -8,6 +8,8 @@ import pytest
 
 from sortai.file_ops import (
     _html_path,
+    dest_label,
+    load_jsonl_entries,
     log_decision,
     move_file,
     render_html_report,
@@ -297,6 +299,58 @@ class TestRenderHtmlReport:
         html = _html_path(log_path).read_text(encoding="utf-8")
         assert "<Acme" not in html
         assert "&lt;Acme" in html
+
+
+# ---------------------------------------------------------------------------
+# load_jsonl_entries
+# ---------------------------------------------------------------------------
+
+
+class TestLoadJsonlEntries:
+    def test_returns_empty_list_for_missing_file(self, tmp_path: Path):
+        assert load_jsonl_entries(tmp_path / "missing.jsonl") == []
+
+    def test_parses_valid_entries(self, tmp_path: Path):
+        log = tmp_path / "log.jsonl"
+        log.write_text('{"a": 1}\n{"b": 2}\n', encoding="utf-8")
+        assert load_jsonl_entries(log) == [{"a": 1}, {"b": 2}]
+
+    def test_skips_corrupt_lines(self, tmp_path: Path):
+        log = tmp_path / "log.jsonl"
+        log.write_text('bad json\n{"ok": true}\n', encoding="utf-8")
+        assert load_jsonl_entries(log) == [{"ok": True}]
+
+    def test_skips_blank_lines(self, tmp_path: Path):
+        log = tmp_path / "log.jsonl"
+        log.write_text('\n{"x": 1}\n\n', encoding="utf-8")
+        assert load_jsonl_entries(log) == [{"x": 1}]
+
+
+# ---------------------------------------------------------------------------
+# dest_label
+# ---------------------------------------------------------------------------
+
+
+class TestDestLabel:
+    def test_returns_empty_for_empty_path(self):
+        assert dest_label("", None) == ""
+
+    def test_returns_filename_without_archive_root(self, tmp_path: Path):
+        assert dest_label(str(tmp_path / "a" / "b.pdf"), None) == "b.pdf"
+
+    def test_returns_relative_path_with_archive_root(self, tmp_path: Path):
+        archive = tmp_path / "archive"
+        path = str(archive / "Finance" / "Invoices" / "acme.pdf")
+        assert dest_label(path, str(archive)) == "Finance/Invoices/acme.pdf"
+
+    def test_falls_back_to_filename_when_not_under_archive(self, tmp_path: Path):
+        assert dest_label(str(tmp_path / "other" / "doc.pdf"), str(tmp_path / "archive")) == "doc.pdf"
+
+    def test_posix_separators_on_all_platforms(self, tmp_path: Path):
+        archive = tmp_path / "archive"
+        path = str(archive / "A" / "B" / "c.pdf")
+        label = dest_label(path, str(archive))
+        assert "\\" not in label
 
 
 # ---------------------------------------------------------------------------

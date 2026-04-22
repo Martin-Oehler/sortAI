@@ -56,19 +56,42 @@ def log_decision(
     render_html_report(log_path)
 
 
+def load_jsonl_entries(log_path: Path) -> list[dict]:
+    """Parse all valid JSON-lines entries from *log_path*, skipping malformed lines."""
+    entries: list[dict] = []
+    if not log_path.exists():
+        return entries
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        if line := line.strip():
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    return entries
+
+
 def render_html_report(log_path: Path) -> None:
     """Read all JSONL entries from *log_path* and write a self-contained HTML report."""
-    entries: list[dict] = []
-    if log_path.exists():
-        for line in log_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line:
-                try:
-                    entries.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
+    entries = load_jsonl_entries(log_path)
     html_path = _html_path(log_path)
     html_path.write_text(_build_html(entries), encoding="utf-8")
+
+
+def dest_label(new_path: str, archive_root_str: str | None) -> str:
+    """Return the display label for a destination path.
+
+    Shows the path relative to the archive root when available, otherwise
+    just the filename.
+    """
+    if not new_path:
+        return ""
+    p = Path(new_path)
+    if archive_root_str:
+        try:
+            return Path(new_path).relative_to(archive_root_str).as_posix()
+        except ValueError:
+            pass
+    return p.name
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +107,7 @@ def _build_html(entries: list[dict]) -> str:
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     total = len(entries)
     dry_run_count = sum(1 for e in entries if e.get("dry_run"))
-    rows = _build_rows(list(reversed(entries)))
+    rows = _build_rows(reversed(entries))
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -159,7 +182,7 @@ def _build_html(entries: list[dict]) -> str:
 </html>"""
 
 
-def _build_rows(entries: list[dict]) -> str:
+def _build_rows(entries) -> str:
     parts = []
     for e in entries:
         ts = _esc(e.get("timestamp", "")[:19])
@@ -171,20 +194,9 @@ def _build_rows(entries: list[dict]) -> str:
         orig_name = _esc(Path(orig_path).name) if orig_path else ""
         orig_path_attr = _esc(orig_path)
         new_path_attr = _esc(new_path)
+        label = _esc(dest_label(new_path, e.get("archive_root")))
 
-        # Build visible destination label: relative_folder/filename when archive
-        # root is known, otherwise just the filename.
         new_p = Path(new_path) if new_path else Path()
-        archive_root_str = e.get("archive_root")
-        if archive_root_str and new_path:
-            try:
-                rel = new_p.relative_to(archive_root_str)
-                dest_label = _esc(str(rel).replace("\\", "/"))
-            except ValueError:
-                dest_label = _esc(new_p.name)
-        else:
-            dest_label = _esc(new_p.name)
-
         try:
             dest_uri = _esc(new_p.as_uri())
         except ValueError:
@@ -199,7 +211,7 @@ def _build_rows(entries: list[dict]) -> str:
             f'      <tr class="entry{dry_class}">\n'
             f'        <td class="ts">{ts}</td>\n'
             f'        <td class="path" title="{orig_path_attr}">{orig_name}</td>\n'
-            f'        <td class="path" title="{new_path_attr}"><a href="{dest_uri}">{dest_label}</a></td>\n'
+            f'        <td class="path" title="{new_path_attr}"><a href="{dest_uri}">{label}</a></td>\n'
             f'        <td><details><summary>{short_summary}</summary><p>{full_summary}</p></details></td>\n'
             f'        <td class="dry">{dry_text}</td>\n'
             f'      </tr>'

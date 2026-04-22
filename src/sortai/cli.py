@@ -192,7 +192,7 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
 @click.pass_context
 def show_log(ctx: click.Context, count: int) -> None:
     """Show recent sort decisions from the log."""
-    import json
+    from sortai.file_ops import dest_label, load_jsonl_entries
 
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
     log_path = cfg.log_file
@@ -201,14 +201,7 @@ def show_log(ctx: click.Context, count: int) -> None:
         console.print("[yellow]No log file found. Run 'sortai process' first.[/yellow]")
         return
 
-    raw_lines = [l.strip() for l in log_path.read_text(encoding="utf-8").splitlines() if l.strip()]
-    entries: list[dict] = []
-    for line in raw_lines:
-        try:
-            entries.append(json.loads(line))
-        except json.JSONDecodeError:
-            pass
-
+    entries = load_jsonl_entries(log_path)
     recent = entries[-count:]
 
     table = Table(
@@ -223,7 +216,7 @@ def show_log(ctx: click.Context, count: int) -> None:
 
     for e in recent:
         orig = Path(e.get("original_path", "")).name
-        dest = Path(e.get("new_path", "")).name
+        dest = dest_label(e.get("new_path", ""), e.get("archive_root"))
         ts = e.get("timestamp", "")[:19]
         raw_summary = e.get("summary", "")
         summary_cell = raw_summary[:80] + ("…" if len(raw_summary) > 80 else "")
