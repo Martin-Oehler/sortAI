@@ -246,7 +246,16 @@ def generate_report(ctx: click.Context) -> None:
 
 @main.command("watch")
 @click.option("--once", is_flag=True, default=False, help="Process existing files then exit.")
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Print full prompt/response for each LLM call.")
 @click.pass_context
-def watch_inbox(ctx: click.Context, once: bool) -> None:
-    """[Phase 6] Monitor the inbox folder and process new PDFs automatically."""
-    console.print("[yellow]Not yet implemented (Phase 6).[/yellow]")
+def watch_inbox(ctx: click.Context, once: bool, verbose: bool) -> None:
+    """Monitor the inbox folder and process new PDFs automatically."""
+    from sortai.watcher import Watcher
+
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    watcher = Watcher(cfg, verbose=verbose)
+
+    if once:
+        watcher.run_once()
+    else:
+        watcher.watch()
