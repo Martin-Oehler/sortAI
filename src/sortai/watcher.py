@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from rich.console import Console
@@ -74,6 +75,7 @@ class Watcher:
             self._stop.set()
             observer.stop()
             observer.join()
+            worker.join()
             console.print("\n[dim]Watcher stopped.[/dim]")
 
     # ------------------------------------------------------------------
@@ -149,15 +151,17 @@ class Watcher:
 class _PDFHandler:
     """Minimal watchdog event handler that forwards PDF created/moved events."""
 
-    def __init__(self, callback) -> None:
-        self._callback = callback
-
-    def dispatch(self, event) -> None:
+    def __init__(self, callback: Callable[[Path], None]) -> None:
         from watchdog.events import FileCreatedEvent, FileMovedEvent
 
-        if isinstance(event, FileCreatedEvent):
+        self._callback = callback
+        self._FileCreatedEvent = FileCreatedEvent
+        self._FileMovedEvent = FileMovedEvent
+
+    def dispatch(self, event) -> None:
+        if isinstance(event, self._FileCreatedEvent):
             path = Path(event.src_path)
-        elif isinstance(event, FileMovedEvent):
+        elif isinstance(event, self._FileMovedEvent):
             path = Path(event.dest_path)
         else:
             return

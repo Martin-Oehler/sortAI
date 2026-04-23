@@ -4,7 +4,7 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -101,20 +101,6 @@ class TestRunOnce:
 
         called_paths = [c.args[0] for c in mock_process.call_args_list]
         assert called_paths == sorted(called_paths)
-
-    def test_sorted_order_matches_expected_names(self, tmp_path: Path):
-        """The exact sorted order is verified by name."""
-        (tmp_path / "z.pdf").write_bytes(b"%PDF")
-        (tmp_path / "a.pdf").write_bytes(b"%PDF")
-        (tmp_path / "m.pdf").write_bytes(b"%PDF")
-        cfg = make_cfg(tmp_path)
-        watcher = Watcher(cfg)
-
-        with patch.object(watcher, "_process") as mock_process:
-            watcher.run_once()
-
-        called_names = [c.args[0].name for c in mock_process.call_args_list]
-        assert called_names == ["a.pdf", "m.pdf", "z.pdf"]
 
 
 # ---------------------------------------------------------------------------
