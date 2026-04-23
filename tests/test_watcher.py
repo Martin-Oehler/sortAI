@@ -360,42 +360,45 @@ class TestOnEvent:
 # ---------------------------------------------------------------------------
 
 class TestFlushPending:
-    def test_does_not_process_paths_with_future_due_time(self, tmp_path: Path):
-        """Paths whose due time is still in the future are not processed."""
+    """_flush_pending enqueues ready paths into _queue; it does not call _process directly."""
+
+    def _drain_queue(self, watcher) -> list[Path]:
+        paths = []
+        while not watcher._queue.empty():
+            paths.append(watcher._queue.get_nowait())
+        return paths
+
+    def test_does_not_enqueue_paths_with_future_due_time(self, tmp_path: Path):
+        """Paths whose due time is still in the future are not enqueued."""
         cfg = make_cfg(tmp_path)
         watcher = Watcher(cfg)
         pdf = tmp_path / "doc.pdf"
-        # Set due time far in the future
         watcher._pending[pdf] = time.monotonic() + 1000.0
 
-        with patch.object(watcher, "_process") as mock_process:
-            watcher._flush_pending()
+        watcher._flush_pending()
 
-        mock_process.assert_not_called()
+        assert watcher._queue.empty()
         assert pdf in watcher._pending  # still pending
 
-    def test_processes_paths_whose_due_time_has_elapsed(self, tmp_path: Path):
-        """Paths whose due time is in the past are processed."""
-        cfg = make_cfg(tmp_path)
-        watcher = Watcher(cfg)
-        pdf = tmp_path / "doc.pdf"
-        # Set due time in the past
-        watcher._pending[pdf] = time.monotonic() - 1.0
-
-        with patch.object(watcher, "_process") as mock_process:
-            watcher._flush_pending()
-
-        mock_process.assert_called_once_with(pdf)
-
-    def test_removes_processed_paths_from_pending(self, tmp_path: Path):
-        """Processed paths are removed from _pending after being dispatched."""
+    def test_enqueues_paths_whose_due_time_has_elapsed(self, tmp_path: Path):
+        """Paths whose due time is in the past are put onto the queue."""
         cfg = make_cfg(tmp_path)
         watcher = Watcher(cfg)
         pdf = tmp_path / "doc.pdf"
         watcher._pending[pdf] = time.monotonic() - 1.0
 
-        with patch.object(watcher, "_process"):
-            watcher._flush_pending()
+        watcher._flush_pending()
+
+        assert self._drain_queue(watcher) == [pdf]
+
+    def test_removes_enqueued_paths_from_pending(self, tmp_path: Path):
+        """Enqueued paths are removed from _pending."""
+        cfg = make_cfg(tmp_path)
+        watcher = Watcher(cfg)
+        pdf = tmp_path / "doc.pdf"
+        watcher._pending[pdf] = time.monotonic() - 1.0
+
+        watcher._flush_pending()
 
         assert pdf not in watcher._pending
 
@@ -407,14 +410,13 @@ class TestFlushPending:
         future_due = time.monotonic() + 1000.0
         watcher._pending[pdf] = future_due
 
-        with patch.object(watcher, "_process"):
-            watcher._flush_pending()
+        watcher._flush_pending()
 
         assert pdf in watcher._pending
         assert watcher._pending[pdf] == future_due
 
-    def test_mixed_pending_only_processes_ready_ones(self, tmp_path: Path):
-        """Only paths with elapsed due times are processed; future ones remain."""
+    def test_mixed_pending_only_enqueues_ready_ones(self, tmp_path: Path):
+        """Only elapsed-due paths go to the queue; future ones stay in _pending."""
         cfg = make_cfg(tmp_path)
         watcher = Watcher(cfg)
         past_pdf = tmp_path / "past.pdf"
@@ -422,59 +424,160 @@ class TestFlushPending:
         watcher._pending[past_pdf] = time.monotonic() - 1.0
         watcher._pending[future_pdf] = time.monotonic() + 1000.0
 
-        with patch.object(watcher, "_process") as mock_process:
-            watcher._flush_pending()
+        watcher._flush_pending()
 
-        mock_process.assert_called_once_with(past_pdf)
+        assert self._drain_queue(watcher) == [past_pdf]
         assert future_pdf in watcher._pending
         assert past_pdf not in watcher._pending
 
-    def test_empty_pending_does_not_call_process(self, tmp_path: Path):
-        """With an empty _pending dict, _process is never called."""
+    def test_empty_pending_leaves_queue_empty(self, tmp_path: Path):
+        """With an empty _pending dict, nothing is enqueued."""
         cfg = make_cfg(tmp_path)
         watcher = Watcher(cfg)
 
-        with patch.object(watcher, "_process") as mock_process:
-            watcher._flush_pending()
+        watcher._flush_pending()
 
-        mock_process.assert_not_called()
+        assert watcher._queue.empty()
 
-    def test_multiple_ready_paths_all_processed(self, tmp_path: Path):
-        """All elapsed-due paths are processed in a single flush call."""
+    def test_multiple_ready_paths_all_enqueued(self, tmp_path: Path):
+        """All elapsed-due paths are enqueued in a single flush call."""
         cfg = make_cfg(tmp_path)
         watcher = Watcher(cfg)
         pdfs = [tmp_path / f"doc_{i}.pdf" for i in range(3)]
         for pdf in pdfs:
             watcher._pending[pdf] = time.monotonic() - 1.0
 
-        with patch.object(watcher, "_process") as mock_process:
-            watcher._flush_pending()
+        watcher._flush_pending()
 
-        assert mock_process.call_count == 3
-        called_paths = {c.args[0] for c in mock_process.call_args_list}
-        assert called_paths == set(pdfs)
+        assert set(self._drain_queue(watcher)) == set(pdfs)
 
-    def test_process_called_outside_lock(self, tmp_path: Path):
-        """_process is invoked after releasing the lock (no deadlock risk)."""
+    def test_enqueue_happens_outside_lock(self, tmp_path: Path):
+        """queue.put is called after releasing the lock (no deadlock risk)."""
         cfg = make_cfg(tmp_path)
         watcher = Watcher(cfg)
         pdf = tmp_path / "doc.pdf"
         watcher._pending[pdf] = time.monotonic() - 1.0
 
-        lock_held_during_process = []
+        lock_held_during_put = []
+        real_put = watcher._queue.put
 
-        def check_lock(path):
-            # The lock is not held during _process; try acquiring it non-blocking.
+        def checked_put(path):
             acquired = watcher._lock.acquire(blocking=False)
-            lock_held_during_process.append(not acquired)
+            lock_held_during_put.append(not acquired)
             if acquired:
                 watcher._lock.release()
+            real_put(path)
 
-        with patch.object(watcher, "_process", side_effect=check_lock):
-            watcher._flush_pending()
+        watcher._queue.put = checked_put
+        watcher._flush_pending()
 
-        # Lock must NOT be held during _process
-        assert lock_held_during_process == [False]
+        assert lock_held_during_put == [False]
+
+
+# ---------------------------------------------------------------------------
+# Watcher._worker
+# ---------------------------------------------------------------------------
+
+class TestWorker:
+    def test_worker_calls_process_for_queued_path(self, tmp_path: Path):
+        """_worker dequeues a path and calls _process with it."""
+        cfg = make_cfg(tmp_path)
+        watcher = Watcher(cfg)
+        pdf = tmp_path / "doc.pdf"
+        watcher._queue.put(pdf)
+
+        def process_and_stop(path):
+            watcher._stop.set()  # signal exit after handling this item
+
+        with patch.object(watcher, "_process", side_effect=process_and_stop):
+            watcher._worker()
+
+        # _process was called exactly once with the queued path
+        # (verified implicitly: if it wasn't called, _stop would never be set
+        #  and _worker would block; the test would time out rather than pass)
+        assert watcher._stop.is_set()
+
+    def test_worker_exits_when_stop_set_and_queue_empty(self, tmp_path: Path):
+        """_worker returns promptly when _stop is set and queue is empty."""
+        cfg = make_cfg(tmp_path)
+        watcher = Watcher(cfg)
+        watcher._stop.set()
+
+        # Should return without hanging.
+        t = threading.Thread(target=watcher._worker)
+        t.start()
+        t.join(timeout=3.0)
+        assert not t.is_alive()
+
+    def test_worker_processes_multiple_queued_paths(self, tmp_path: Path):
+        """_worker processes every path that was in the queue before stop."""
+        cfg = make_cfg(tmp_path)
+        watcher = Watcher(cfg)
+        pdfs = [tmp_path / f"file_{i}.pdf" for i in range(3)]
+        for pdf in pdfs:
+            watcher._queue.put(pdf)
+
+        processed = []
+
+        def record(path):
+            processed.append(path)
+            if len(processed) == len(pdfs):
+                watcher._stop.set()
+
+        with patch.object(watcher, "_process", side_effect=record):
+            t = threading.Thread(target=watcher._worker, daemon=True)
+            t.start()
+            t.join(timeout=5.0)
+
+        assert set(processed) == set(pdfs)
+
+    def test_watch_starts_worker_thread(self, tmp_path: Path):
+        """watch() starts a daemon thread named 'sortai-worker'."""
+        cfg = make_cfg(tmp_path)
+        watcher = Watcher(cfg)
+        observer = MagicMock()
+        observer.is_alive.side_effect = [False]
+
+        started_threads: list[threading.Thread] = []
+        real_start = threading.Thread.start
+
+        def capture_start(self_thread, *a, **kw):
+            started_threads.append(self_thread)
+            real_start(self_thread, *a, **kw)
+
+        with patch("watchdog.observers.Observer", return_value=observer), \
+             patch("time.sleep"), \
+             patch.object(threading.Thread, "start", capture_start):
+            watcher.watch()
+
+        names = [t.name for t in started_threads]
+        assert "sortai-worker" in names
+
+    def test_stop_event_set_on_watch_exit(self, tmp_path: Path):
+        """watch() sets _stop when the loop ends so the worker thread can exit."""
+        cfg = make_cfg(tmp_path)
+        watcher = Watcher(cfg)
+        observer = MagicMock()
+        observer.is_alive.side_effect = [False]
+
+        with patch("watchdog.observers.Observer", return_value=observer), \
+             patch("time.sleep"):
+            watcher.watch()
+
+        assert watcher._stop.is_set()
+
+    def test_stop_event_set_on_keyboard_interrupt(self, tmp_path: Path):
+        """watch() sets _stop even when exiting via KeyboardInterrupt."""
+        cfg = make_cfg(tmp_path)
+        watcher = Watcher(cfg)
+        observer = MagicMock()
+        observer.is_alive.side_effect = KeyboardInterrupt
+
+        with patch("watchdog.observers.Observer", return_value=observer), \
+             patch("time.sleep"):
+            watcher.watch()
+
+        assert watcher._stop.is_set()
 
 
 # ---------------------------------------------------------------------------

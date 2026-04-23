@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import queue
 import threading
 import time
 from pathlib import Path
@@ -27,6 +28,8 @@ class Watcher:
         self.verbose = verbose
         self._pending: dict[Path, float] = {}
         self._lock = threading.Lock()
+        self._queue: queue.Queue[Path] = queue.Queue()
+        self._stop = threading.Event()
 
     # ------------------------------------------------------------------
     # Public interface
@@ -44,7 +47,6 @@ class Watcher:
 
     def watch(self) -> None:
         """Block until Ctrl-C, processing PDFs as they appear in the inbox."""
-        from watchdog.events import FileSystemEvent, PatternMatchingEventHandler
         from watchdog.observers import Observer
 
         handler = _PDFHandler(self._on_event)
@@ -52,6 +54,9 @@ class Watcher:
         observer.schedule(handler, str(self.cfg.inbox), recursive=False)
         observer.start()
         self.run_once()
+
+        worker = threading.Thread(target=self._worker, daemon=True, name="sortai-worker")
+        worker.start()
 
         console.print(
             f"[bold green]Watching[/bold green] {self.cfg.inbox} "
@@ -66,6 +71,7 @@ class Watcher:
         except KeyboardInterrupt:
             pass
         finally:
+            self._stop.set()
             observer.stop()
             observer.join()
             console.print("\n[dim]Watcher stopped.[/dim]")
@@ -74,13 +80,23 @@ class Watcher:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _worker(self) -> None:
+        """Daemon thread: pull paths from the queue and process them one by one."""
+        while not self._stop.is_set():
+            try:
+                pdf = self._queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            self._process(pdf)
+            self._queue.task_done()
+
     def _on_event(self, path: Path) -> None:
         """Called by the watchdog thread when a PDF appears."""
         with self._lock:
             self._pending[path] = time.monotonic() + _DEBOUNCE_SECONDS
 
     def _flush_pending(self) -> None:
-        """Process any pending paths whose debounce timer has elapsed."""
+        """Enqueue any pending paths whose debounce timer has elapsed."""
         now = time.monotonic()
         ready: list[Path] = []
         with self._lock:
@@ -89,7 +105,7 @@ class Watcher:
                     ready.append(path)
                     del self._pending[path]
         for path in ready:
-            self._process(path)
+            self._queue.put(path)
 
     def _process(self, pdf_path: Path) -> None:
         """Run the full pipeline on a single PDF; log errors but don't crash."""
