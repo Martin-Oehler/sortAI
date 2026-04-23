@@ -259,3 +259,78 @@ def watch_inbox(ctx: click.Context, once: bool, verbose: bool) -> None:
         watcher.run_once()
     else:
         watcher.watch()
+
+
+# ---------------------------------------------------------------------------
+# Validate command group
+# ---------------------------------------------------------------------------
+
+@main.group("validate")
+def validate_group() -> None:
+    """Validate pipeline accuracy against ground-truth sorted documents."""
+
+
+@validate_group.command("sample")
+@click.argument("output", type=click.Path(dir_okay=False, path_type=Path))
+@click.option(
+    "-n", "count",
+    default=20,
+    show_default=True,
+    help="Number of PDFs to randomly sample from the archive.",
+)
+@click.pass_context
+def validate_sample(ctx: click.Context, output: Path, count: int) -> None:
+    """Sample N PDFs from the archive and write a test set JSON file.
+
+    OUTPUT is the path where the test set will be written.
+    Each sampled file's current folder is recorded as ground truth.
+    """
+    from sortai.validator import sample_pdfs, write_test_set
+
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    console.print(f"[cyan]Scanning archive:[/cyan] {cfg.archive}")
+    try:
+        test_set = sample_pdfs(cfg.archive, count)
+    except ValueError as exc:
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        raise SystemExit(1)
+
+    write_test_set(test_set, output)
+    console.print(f"[bold green]Test set written:[/bold green] {output}")
+    console.print(f"[dim]Sampled {test_set['n']} PDF(s) (requested {count}).[/dim]")
+
+
+@validate_group.command("run")
+@click.argument("test_set_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Show LLM summaries in the results table.")
+@click.pass_context
+def validate_run(ctx: click.Context, test_set_file: Path, verbose: bool) -> None:
+    """Run the pipeline against a test set and report accuracy.
+
+    TEST_SET_FILE is a JSON file produced by 'sortai validate sample'.
+    Files are never moved — the pipeline always runs in dry-run mode.
+    """
+    from sortai.validator import load_test_set, print_results_table, print_score, run_validation
+
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    test_set = load_test_set(test_set_file)
+
+    from pathlib import Path as _Path
+    archive_root = _Path(test_set["archive_root"])
+    console.print(
+        f"[cyan]Validating[/cyan] {test_set['n']} file(s) against archive: {archive_root}"
+    )
+    if cfg.archive.resolve() != archive_root.resolve():
+        console.print(
+            f"[yellow]Warning:[/yellow] test set archive_root ({archive_root}) "
+            f"differs from config archive ({cfg.archive})."
+        )
+
+    try:
+        results = run_validation(test_set, cfg, verbose=verbose, console=console)
+    except RuntimeError as exc:
+        console.print(f"[bold red]Error:[/bold red] {exc}")
+        raise SystemExit(1)
+
+    print_results_table(results, verbose=verbose, console=console)
+    print_score(results, console=console)

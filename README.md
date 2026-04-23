@@ -78,8 +78,12 @@ sortai [--config FILE] [--dry-run] COMMAND
 | `sortai extract PDF_FILE [-n MAX_CHARS]` | Extract and display text from a PDF |
 | `sortai tree` | Print the archive folder tree |
 | `sortai ping` | Test LM Studio connection (load, hello, unload) |
-| `sortai process PDF_FILE` | *(planned)* Run the full sort pipeline |
-| `sortai watch [--once]` | *(planned)* Watch inbox and auto-process |
+| `sortai process PDF_FILE [--verbose] [--warm]` | Run the full sort pipeline on a single PDF |
+| `sortai watch [--once] [--verbose]` | Watch inbox and auto-process new PDFs |
+| `sortai log [-n N]` | Show recent sort decisions |
+| `sortai report` | Regenerate the HTML audit report |
+| `sortai validate sample OUTPUT [-n N]` | Sample N PDFs from archive into a test set file |
+| `sortai validate run TEST_SET_FILE [--verbose]` | Run the pipeline against a test set and score accuracy |
 
 **Examples**
 
@@ -95,7 +99,35 @@ sortai ping
 
 # Simulate a sort without moving files
 sortai --dry-run process ~/Downloads/invoice.pdf
+
+# Create a validation test set (20 randomly sampled PDFs from the archive)
+sortai validate sample my_test_set.json -n 20
+
+# Evaluate sorting accuracy against the test set (no files are moved)
+sortai validate run my_test_set.json
 ```
+
+## Validation
+
+The `validate` commands let you measure how well sortAI sorts documents by comparing its decisions against your existing archive layout.
+
+```bash
+# Step 1: sample PDFs already sorted in your archive
+sortai validate sample test_set.json -n 50
+
+# Step 2: run the pipeline in dry-run mode and score the results
+sortai validate run test_set.json
+
+# Example output:
+# ┌── Validation Results ──────────────────────────────────┐
+# │  # │ File            │ Ground Truth │ Predicted  │ ✓  │
+# │  1 │ statement.pdf   │ bank/2024    │ bank/2024  │ ✓  │
+# │  2 │ contract.pdf    │ legal        │ legal/misc │ ~  │
+# └────────────────────────────────────────────────────────┘
+# Accuracy: 42/50 (84.0%) exact  |  47/50 (94.0%) partial  |  0 error(s)
+```
+
+The test set is a plain JSON file — commit it to track accuracy changes over time, or use it to compare different models and prompt configurations.
 
 ## Running the tests
 
