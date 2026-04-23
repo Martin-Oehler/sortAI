@@ -51,6 +51,7 @@ class Watcher:
         observer = Observer()
         observer.schedule(handler, str(self.cfg.inbox), recursive=False)
         observer.start()
+        self.run_once()
 
         console.print(
             f"[bold green]Watching[/bold green] {self.cfg.inbox} "
