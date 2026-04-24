@@ -158,7 +158,7 @@ def run_validation(
     # Force dry_run regardless of user config to guarantee no file moves.
     cfg_dry = dataclasses.replace(cfg, dry_run=True)
 
-    archive_root = Path(test_set["archive_root"])
+    archive_root = cfg_dry.archive
     total = test_set["n"]
 
     client = LMStudioClient(
@@ -205,25 +205,25 @@ def print_results_table(
 
         if r["error"]:
             predicted_cell = f"[bold red]ERROR: {r['error'][:60]}[/bold red]"
-            match_cell = "[red]✗[/red]"
-            partial_cell = "[red]✗[/red]"
+            match_cell = "[red]N[/red]"
+            partial_cell = "[red]N[/red]"
         elif r["exact_match"]:
             predicted_cell = f"[green]{r['predicted_folder']}[/green]"
-            match_cell = "[green]✓[/green]"
-            partial_cell = "[green]✓[/green]"
+            match_cell = "[green]Y[/green]"
+            partial_cell = "[green]Y[/green]"
         elif r["prefix_match"]:
             predicted_cell = f"[yellow]{r['predicted_folder']}[/yellow]"
-            match_cell = "[red]✗[/red]"
+            match_cell = "[red]N[/red]"
             partial_cell = "[yellow]~[/yellow]"
         else:
             predicted_cell = f"[red]{r['predicted_folder']}[/red]"
-            match_cell = "[red]✗[/red]"
-            partial_cell = "[red]✗[/red]"
+            match_cell = "[red]N[/red]"
+            partial_cell = "[red]N[/red]"
 
         row = [str(i), filename, r["ground_truth_folder"], predicted_cell, match_cell, partial_cell]
         if verbose:
             s = r["summary"]
-            row.append(s[:80] + ("…" if len(s) > 80 else ""))
+            row.append(s[:80] + ("..." if len(s) > 80 else ""))
 
         table.add_row(*row)
 
