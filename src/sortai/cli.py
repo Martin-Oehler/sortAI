@@ -116,6 +116,7 @@ def ping_lm_studio(ctx: click.Context) -> None:
         prompts_dir=cfg.prompts_dir,
         temperature=cfg.lm_studio.temperature,
         max_tokens=cfg.lm_studio.max_tokens,
+        reasoning=cfg.lm_studio.reasoning,
     )
 
     try:
@@ -147,6 +148,7 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
         prompts_dir=cfg.prompts_dir,
         temperature=cfg.lm_studio.temperature,
         max_tokens=cfg.lm_studio.max_tokens,
+        reasoning=cfg.lm_studio.reasoning,
     )
 
     try:

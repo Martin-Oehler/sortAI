@@ -122,6 +122,7 @@ class Watcher:
             prompts_dir=self.cfg.prompts_dir,
             temperature=self.cfg.lm_studio.temperature,
             max_tokens=self.cfg.lm_studio.max_tokens,
+            reasoning=self.cfg.lm_studio.reasoning,
         )
         try:
             with client:
