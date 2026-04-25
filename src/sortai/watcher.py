@@ -122,11 +122,12 @@ class Watcher:
             prompts_dir=self.cfg.prompts_dir,
             temperature=self.cfg.lm_studio.temperature,
             max_tokens=self.cfg.lm_studio.max_tokens,
+            reasoning=self.cfg.lm_studio.reasoning,
         )
         try:
             with client:
                 pipeline = Pipeline(self.cfg, client, verbose=self.verbose)
-                target_folder, filename, summary = pipeline.run(pdf_path)
+                target_folder, filename, summary, _ = pipeline.run(pdf_path)
 
             dest = move_file(
                 src=pdf_path.resolve(),

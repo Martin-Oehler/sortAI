@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from sortai.llm_client import LMStudioClient
+from sortai.llm_client import LLMResponse, LMStudioClient
 
 
 BASE_URL = "http://localhost:1234"
@@ -159,57 +159,65 @@ class TestPostV0:
 # ---------------------------------------------------------------------------
 
 class TestComplete:
-    def _make_openai_mock(self, content: str) -> MagicMock:
-        choice = MagicMock()
-        choice.message.content = content
-        response = MagicMock()
-        response.choices = [choice]
-        return response
+    def _post_response(self, content: str | None = "hello", reasoning: str | None = None) -> dict:
+        output = []
+        if content is not None:
+            output.append({"type": "message", "content": content})
+        if reasoning is not None:
+            output.append({"type": "reasoning", "content": reasoning})
+        return {"output": output}
 
-    def test_complete_with_system_sends_two_messages(self, tmp_path: Path) -> None:
-        mock_openai = MagicMock()
-        expected_response = self._make_openai_mock("Hello!")
-        mock_openai.chat.completions.create.return_value = expected_response
+    def test_complete_returns_llmresponse_with_content(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path)
+        with patch.object(client, "_post_v1", return_value=self._post_response("The answer is 42.")):
+            result = client.complete("What is the answer?")
+        assert isinstance(result, LLMResponse)
+        assert result.content == "The answer is 42."
 
-        with patch("sortai.llm_client.OpenAI", return_value=mock_openai):
-            client = LMStudioClient(
-                base_url=BASE_URL,
-                model_name=MODEL,
-                prompts_dir=tmp_path,
-            )
+    def test_complete_returns_empty_reasoning_when_absent(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path)
+        with patch.object(client, "_post_v1", return_value=self._post_response("hello")):
+            result = client.complete("test")
+        assert result.reasoning == ""
 
-        client.complete("Hi there", system="You are a helpful assistant.")
+    def test_complete_captures_reasoning_token(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path)
+        response = self._post_response("answer", reasoning="I thought about it carefully")
+        with patch.object(client, "_post_v1", return_value=response):
+            result = client.complete("test")
+        assert result.content == "answer"
+        assert result.reasoning == "I thought about it carefully"
 
-        mock_openai.chat.completions.create.assert_called_once()
-        call_kwargs = mock_openai.chat.completions.create.call_args[1]
-        messages = call_kwargs["messages"]
-        assert len(messages) == 2
-        assert messages[0] == {"role": "system", "content": "You are a helpful assistant."}
-        assert messages[1] == {"role": "user", "content": "Hi there"}
+    def test_complete_returns_empty_content_when_no_message_output(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path)
+        with patch.object(client, "_post_v1", return_value={"output": []}):
+            result = client.complete("test")
+        assert result.content == ""
+        assert result.reasoning == ""
 
-    def test_complete_without_system_sends_one_message(self, tmp_path: Path) -> None:
-        mock_openai = MagicMock()
-        mock_openai.chat.completions.create.return_value = self._make_openai_mock("pong")
+    def test_complete_with_system_includes_system_prompt_in_payload(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path)
+        captured: list[dict] = []
+        def capture(endpoint, payload, **kwargs):
+            captured.append(payload)
+            return self._post_response("ok")
+        with patch.object(client, "_post_v1", side_effect=capture):
+            client.complete("Hi", system="You are helpful.")
+        assert captured[0]["system_prompt"] == "You are helpful."
+        assert captured[0]["input"] == "Hi"
 
-        with patch("sortai.llm_client.OpenAI", return_value=mock_openai):
-            client = LMStudioClient(
-                base_url=BASE_URL,
-                model_name=MODEL,
-                prompts_dir=tmp_path,
-            )
+    def test_complete_without_system_omits_system_prompt(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path)
+        captured: list[dict] = []
+        def capture(endpoint, payload, **kwargs):
+            captured.append(payload)
+            return self._post_response("ok")
+        with patch.object(client, "_post_v1", side_effect=capture):
+            client.complete("ping")
+        assert "system_prompt" not in captured[0]
 
-        client.complete("ping")
-
-        call_kwargs = mock_openai.chat.completions.create.call_args[1]
-        messages = call_kwargs["messages"]
-        assert len(messages) == 1
-        assert messages[0]["role"] == "user"
-
-    def test_complete_passes_correct_model_and_params(self, tmp_path: Path) -> None:
-        mock_openai = MagicMock()
-        mock_openai.chat.completions.create.return_value = self._make_openai_mock("ok")
-
-        with patch("sortai.llm_client.OpenAI", return_value=mock_openai):
+    def test_complete_payload_includes_model_temperature_tokens(self, tmp_path: Path) -> None:
+        with patch("sortai.llm_client.OpenAI"):
             client = LMStudioClient(
                 base_url=BASE_URL,
                 model_name=MODEL,
@@ -217,45 +225,18 @@ class TestComplete:
                 temperature=0.7,
                 max_tokens=1024,
             )
-
-        client.complete("test")
-
-        call_kwargs = mock_openai.chat.completions.create.call_args[1]
-        assert call_kwargs["model"] == MODEL
-        assert call_kwargs["temperature"] == 0.7
-        assert call_kwargs["max_tokens"] == 1024
-
-    def test_complete_returns_response_content(self, tmp_path: Path) -> None:
-        mock_openai = MagicMock()
-        mock_openai.chat.completions.create.return_value = self._make_openai_mock("The answer is 42.")
-
-        with patch("sortai.llm_client.OpenAI", return_value=mock_openai):
-            client = LMStudioClient(
-                base_url=BASE_URL,
-                model_name=MODEL,
-                prompts_dir=tmp_path,
-            )
-
-        result = client.complete("What is the answer?")
-        assert result == "The answer is 42."
-
-    def test_complete_returns_empty_string_when_content_is_none(self, tmp_path: Path) -> None:
-        mock_openai = MagicMock()
-        mock_openai.chat.completions.create.return_value = self._make_openai_mock(None)
-
-        with patch("sortai.llm_client.OpenAI", return_value=mock_openai):
-            client = LMStudioClient(
-                base_url=BASE_URL,
-                model_name=MODEL,
-                prompts_dir=tmp_path,
-            )
-
-        result = client.complete("test")
-        assert result == ""
+        captured: list[dict] = []
+        def capture(endpoint, payload, **kwargs):
+            captured.append(payload)
+            return self._post_response("ok")
+        with patch.object(client, "_post_v1", side_effect=capture):
+            client.complete("test")
+        assert captured[0]["model"] == MODEL
+        assert captured[0]["temperature"] == 0.7
+        assert captured[0]["max_output_tokens"] == 1024
 
     def test_complete_openai_initialized_with_correct_base_url(self, tmp_path: Path) -> None:
         with patch("sortai.llm_client.OpenAI") as MockOpenAI:
-            MockOpenAI.return_value.chat.completions.create.return_value = self._make_openai_mock("hi")
             LMStudioClient(
                 base_url=BASE_URL,
                 model_name=MODEL,

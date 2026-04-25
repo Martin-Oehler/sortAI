@@ -580,7 +580,7 @@ class TestProcess:
     def _make_pipeline_mock(self, target: Path, filename: str, summary: str):
         """Return a Pipeline mock whose run() returns the given tuple."""
         pipeline_instance = MagicMock()
-        pipeline_instance.run.return_value = (target, filename, summary)
+        pipeline_instance.run.return_value = (target, filename, summary, [])
         pipeline_cls = MagicMock(return_value=pipeline_instance)
         return pipeline_cls, pipeline_instance
 
@@ -635,6 +635,7 @@ class TestProcess:
             prompts_dir=cfg.prompts_dir,
             temperature=cfg.lm_studio.temperature,
             max_tokens=cfg.lm_studio.max_tokens,
+            reasoning=cfg.lm_studio.reasoning,
         )
 
     def test_uses_client_as_context_manager(self, tmp_path: Path):
@@ -650,7 +651,7 @@ class TestProcess:
         client_instance.__enter__ = MagicMock(return_value=client_instance)
         client_instance.__exit__ = MagicMock(return_value=False)
         pipeline_instance = MagicMock()
-        pipeline_instance.run.return_value = (archive, "out.pdf", "summary")
+        pipeline_instance.run.return_value = (archive, "out.pdf", "summary", [])
         move_result = archive / "out.pdf"
 
         with patch(self._PATCH_CLIENT, return_value=client_instance), \
@@ -695,7 +696,7 @@ class TestProcess:
         client_instance.__enter__ = MagicMock(return_value=client_instance)
         client_instance.__exit__ = MagicMock(return_value=False)
         pipeline_instance = MagicMock()
-        pipeline_instance.run.return_value = (archive, "out.pdf", "summary")
+        pipeline_instance.run.return_value = (archive, "out.pdf", "summary", [])
         move_result = archive / "out.pdf"
 
         with patch(self._PATCH_CLIENT, return_value=client_instance) as MockClient, \

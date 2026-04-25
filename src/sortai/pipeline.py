@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TypedDict
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -12,8 +13,16 @@ from rich.rule import Rule
 
 from sortai.config import Config
 from sortai.folder_navigator import is_leaf, list_children
-from sortai.llm_client import LMStudioClient
+from sortai.llm_client import LLMResponse, LMStudioClient
 from sortai.pdf_reader import extract_text
+
+
+class StageInteraction(TypedDict):
+    stage: str
+    step: int
+    prompt: str
+    answer: str
+    reasoning: str
 
 # Max characters of document text forwarded to the LLM per call.
 _MAX_TEXT_CHARS = 4000
@@ -50,21 +59,25 @@ class Pipeline:
         self._console.print(Panel(Markdown(prompt), title="[dim]prompt[/dim]", border_style="dim"))
         self._console.print(Panel(response.strip(), title="[dim]response[/dim]", border_style="green"))
 
-    def summarize(self, text: str) -> str:
+    def summarize(self, text: str) -> tuple[str, list[StageInteraction]]:
         """Stage 1 — summarize the document text."""
         template = self.client.load_prompt("summarize")
         prompt = template.replace("{{document_text}}", _truncate(text))
-        result = self.client.complete(prompt).strip()
+        resp = self.client.complete(prompt)
+        result = resp.content.strip()
+        interactions = [StageInteraction(stage="summarize", step=1,
+            prompt=prompt, answer=result, reasoning=resp.reasoning)]
         if self.verbose:
             self._log_exchange("Stage 1 — Summarize", prompt, result)
-        return result
+        return result, interactions
 
-    def navigate_to_folder(self, text: str, summary: str) -> Path:
+    def navigate_to_folder(self, text: str, summary: str) -> tuple[Path, list[StageInteraction]]:
         """Stage 2 — walk the archive tree to find the best target folder."""
         template = self.client.load_prompt("navigate")
         current = self.config.archive
         short_text = _truncate(text)
         step = 0
+        interactions: list[StageInteraction] = []
 
         for _ in range(self.config.max_navigate_depth):
             children = list_children(current)
@@ -79,8 +92,11 @@ class Pipeline:
                 .replace("{{summary}}", summary)
                 .replace("{{document_text}}", short_text)
             )
-            choice = self.client.complete(prompt).strip().splitlines()[0].strip()
+            resp = self.client.complete(prompt)
+            choice = resp.content.strip().splitlines()[0].strip()
             step += 1
+            interactions.append(StageInteraction(stage="navigate", step=step,
+                prompt=prompt, answer=choice, reasoning=resp.reasoning))
             if self.verbose:
                 self._log_exchange(f"Stage 2 — Navigate (step {step})", prompt, choice)
 
@@ -89,9 +105,9 @@ class Pipeline:
 
             current = current / choice
 
-        return current
+        return current, interactions
 
-    def choose_filename(self, text: str, summary: str, target: Path) -> str:
+    def choose_filename(self, text: str, summary: str, target: Path) -> tuple[str, list[StageInteraction]]:
         """Stage 3 — pick a sanitised filename (with .pdf extension)."""
         existing = sorted(p.name for p in target.iterdir() if p.is_file()) if target.exists() else []
         existing_files = "\n".join(f"- {f}" for f in existing[:20]) or "(none)"
@@ -104,16 +120,19 @@ class Pipeline:
             .replace("{{summary}}", summary)
             .replace("{{document_text}}", _truncate(text))
         )
-        raw = self.client.complete(prompt).strip()
+        resp = self.client.complete(prompt)
+        raw = resp.content.strip()
         result = _sanitize_filename(raw)
+        interactions = [StageInteraction(stage="choose_filename", step=1,
+            prompt=prompt, answer=raw, reasoning=resp.reasoning)]
         if self.verbose:
             self._log_exchange("Stage 3 — Name file", prompt, raw)
-        return result
+        return result, interactions
 
-    def run(self, pdf_path: Path) -> tuple[Path, str, str]:
-        """Run all three stages and return (target_folder, filename, summary)."""
+    def run(self, pdf_path: Path) -> tuple[Path, str, str, list[StageInteraction]]:
+        """Run all three stages and return (target_folder, filename, summary, interactions)."""
         text = extract_text(pdf_path)
-        summary = self.summarize(text)
-        target_folder = self.navigate_to_folder(text, summary)
-        filename = self.choose_filename(text, summary, target_folder)
-        return target_folder, filename, summary
+        summary, s1 = self.summarize(text)
+        target_folder, s2 = self.navigate_to_folder(text, summary)
+        filename, s3 = self.choose_filename(text, summary, target_folder)
+        return target_folder, filename, summary, s1 + s2 + s3

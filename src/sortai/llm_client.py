@@ -5,11 +5,18 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Optional
 
 from openai import OpenAI
+
+
+@dataclass(slots=True)
+class LLMResponse:
+    content: str
+    reasoning: str
 
 
 class LMStudioClient:
@@ -20,12 +27,14 @@ class LMStudioClient:
         prompts_dir: Path = Path("prompts"),
         temperature: float = 0.2,
         max_tokens: int = 2048,
+        reasoning: Optional[str] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         self.prompts_dir = Path(prompts_dir)
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.reasoning = reasoning
         self._openai = OpenAI(
             base_url=f"{self.base_url}/v1",
             api_key="lm-studio",
@@ -53,20 +62,28 @@ class LMStudioClient:
     # Completion
     # ------------------------------------------------------------------
 
-    def complete(self, prompt: str, system: Optional[str] = None) -> str:
+    def complete(self, prompt: str, system: Optional[str] = None) -> LLMResponse:
         """Single-turn chat completion; no conversation history kept."""
-        messages: list[dict] = []
+        payload: dict = {
+            "model": self.model_name,
+            "input": prompt,
+            "temperature": self.temperature,
+            "max_output_tokens": self.max_tokens,
+        }
+        if self.reasoning is not None:
+            payload["reasoning"] = self.reasoning
         if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+            payload["system_prompt"] = system
 
-        response = self._openai.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-        )
-        return response.choices[0].message.content or ""
+        response = self._post_v1("chat", payload, timeout=300)
+        content = ""
+        reasoning = ""
+        for item in response.get("output", []):
+            if item.get("type") == "message":
+                content = item.get("content", "")
+            elif item.get("type") == "reasoning":
+                reasoning = item.get("content", "")
+        return LLMResponse(content=content, reasoning=reasoning)
 
     # ------------------------------------------------------------------
     # Prompt loading

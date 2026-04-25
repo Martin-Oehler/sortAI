@@ -31,3 +31,7 @@ temperature = 0.2
 
 # Maximum tokens to generate per completion.
 max_tokens = 2048
+
+# Reasoning effort: "off", "low", "medium", "high", or "on".
+# Defaults to the automatically chosen setting for the model. Not all models support this.
+# reasoning = "on"
