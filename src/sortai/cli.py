@@ -123,7 +123,7 @@ def ping_lm_studio(ctx: click.Context) -> None:
         console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
         with client:
             console.print("[cyan]Sending hello…[/cyan]")
-            reply = client.complete("Hello! Please respond with a single short sentence.")
+            reply = client.complete("Hello! Please respond with a single short sentence.").content
             console.print(f"\n[bold green]Response:[/bold green] {reply}\n")
         console.print("[cyan]Model unloaded.[/cyan]")
     except RuntimeError as exc:
@@ -159,7 +159,7 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
         client.load_model()
         pipeline = Pipeline(cfg, client, verbose=verbose)
         console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")
-        target_folder, filename, summary = pipeline.run(pdf_file)
+        target_folder, filename, summary, _ = pipeline.run(pdf_file)
         if warm:
             console.print("[cyan]Model kept loaded (--warm).[/cyan]")
         else:
@@ -312,6 +312,8 @@ def validate_run(ctx: click.Context, test_set_file: Path, verbose: bool) -> None
     TEST_SET_FILE is a JSON file produced by 'sortai validate sample'.
     Files are never moved — the pipeline always runs in dry-run mode.
     """
+    import json as _json
+
     from sortai.validator import load_test_set, print_results_table, print_score, run_validation
 
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
@@ -336,3 +338,9 @@ def validate_run(ctx: click.Context, test_set_file: Path, verbose: bool) -> None
 
     print_results_table(results, verbose=verbose, console=console)
     print_score(results, console=console)
+
+    results_path = test_set_file.parent / f"{test_set_file.stem}_results.json"
+    results_path.write_text(
+        _json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    console.print(f"[dim]Results written:[/dim] {results_path}")

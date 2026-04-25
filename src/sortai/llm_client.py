@@ -5,11 +5,18 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Optional
 
 from openai import OpenAI
+
+
+@dataclass(slots=True)
+class LLMResponse:
+    content: str
+    reasoning: str
 
 
 class LMStudioClient:
@@ -55,7 +62,7 @@ class LMStudioClient:
     # Completion
     # ------------------------------------------------------------------
 
-    def complete(self, prompt: str, system: Optional[str] = None) -> str:
+    def complete(self, prompt: str, system: Optional[str] = None) -> LLMResponse:
         """Single-turn chat completion; no conversation history kept."""
         payload: dict = {
             "model": self.model_name,
@@ -69,10 +76,14 @@ class LMStudioClient:
             payload["system_prompt"] = system
 
         response = self._post_v1("chat", payload, timeout=300)
+        content = ""
+        reasoning = ""
         for item in response.get("output", []):
             if item.get("type") == "message":
-                return item.get("content", "")
-        return ""
+                content = item.get("content", "")
+            elif item.get("type") == "reasoning":
+                reasoning = item.get("content", "")
+        return LLMResponse(content=content, reasoning=reasoning)
 
     # ------------------------------------------------------------------
     # Prompt loading

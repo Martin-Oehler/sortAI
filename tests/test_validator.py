@@ -204,7 +204,7 @@ class TestRunSingle:
     def test_success_returns_result(self, tmp_path: Path):
         target = tmp_path / "bank" / "statements"
         pipeline = MagicMock()
-        pipeline.run.return_value = (target, "doc.pdf", "a summary")
+        pipeline.run.return_value = (target, "doc.pdf", "a summary", [])
         entry = self._make_entry(str(tmp_path / "doc.pdf"), "bank/statements")
 
         result = _run_single(entry, tmp_path, pipeline)
@@ -213,6 +213,7 @@ class TestRunSingle:
         assert result["predicted_folder"] == "bank/statements"
         assert result["summary"] == "a summary"
         assert result["error"] == ""
+        assert result["interactions"] == []
 
     def test_error_returns_error_result(self, tmp_path: Path):
         pipeline = MagicMock()
@@ -225,11 +226,12 @@ class TestRunSingle:
         assert result["prefix_match"] is False
         assert result["predicted_folder"] == ""
         assert "LLM unavailable" in result["error"]
+        assert result["interactions"] == []
 
     def test_prefix_match_detected(self, tmp_path: Path):
         target = tmp_path / "bank"
         pipeline = MagicMock()
-        pipeline.run.return_value = (target, "doc.pdf", "summary")
+        pipeline.run.return_value = (target, "doc.pdf", "summary", [])
         entry = self._make_entry(str(tmp_path / "doc.pdf"), "bank/statements")
 
         result = _run_single(entry, tmp_path, pipeline)
@@ -276,7 +278,7 @@ class TestRunValidation:
             mock_client = self._make_client_mock(tmp_path)
             MockClient.return_value = mock_client
             mock_pipeline = MagicMock()
-            mock_pipeline.run.return_value = (target, "doc.pdf", "summary")
+            mock_pipeline.run.return_value = (target, "doc.pdf", "summary", [])
             MockPipeline.return_value = mock_pipeline
 
             results = run_validation(test_set, cfg)
@@ -299,7 +301,7 @@ class TestRunValidation:
             def capture_pipeline(cfg_arg, client_arg, **kwargs):
                 captured_cfg.append(cfg_arg)
                 m = MagicMock()
-                m.run.return_value = (archive / "sub", "doc.pdf", "s")
+                m.run.return_value = (archive / "sub", "doc.pdf", "s", [])
                 return m
 
             MockPipeline.side_effect = capture_pipeline
@@ -318,7 +320,7 @@ class TestRunValidation:
             mock_client = self._make_client_mock(tmp_path)
             MockClient.return_value = mock_client
             mock_pipeline = MagicMock()
-            mock_pipeline.run.return_value = (archive / "sub", "doc.pdf", "s")
+            mock_pipeline.run.return_value = (archive / "sub", "doc.pdf", "s", [])
             MockPipeline.return_value = mock_pipeline
 
             run_validation(test_set, cfg)
@@ -345,6 +347,7 @@ def _make_results(
             prefix_match=prefix,
             error=error,
             summary="A document summary",
+            interactions=[],
         )
     ]
 
@@ -508,7 +511,7 @@ class TestValidateCLI:
             mock_client.__exit__ = MagicMock(return_value=False)
             MockClient.return_value = mock_client
             mock_pipeline = MagicMock()
-            mock_pipeline.run.return_value = (sub, "doc.pdf", "summary")
+            mock_pipeline.run.return_value = (sub, "doc.pdf", "summary", [])
             MockPipeline.return_value = mock_pipeline
 
             runner = CliRunner()
@@ -519,3 +522,57 @@ class TestValidateCLI:
 
         assert result.exit_code == 0, result.output
         assert "Accuracy" in result.output
+
+    def test_validate_run_writes_results_json(self, tmp_path: Path):
+        from click.testing import CliRunner
+        from sortai.cli import main
+
+        archive = tmp_path / "archive"
+        sub = archive / "bank"
+        sub.mkdir(parents=True)
+        pdf = make_pdf(sub / "doc.pdf")
+        inbox = tmp_path / "inbox"
+        inbox.mkdir()
+
+        config_path = tmp_path / "config.toml"
+        self._write_config(config_path, inbox, archive)
+
+        test_set = TestSet(
+            archive_root=str(archive),
+            created_at=datetime.now().isoformat(),
+            n=1,
+            entries=[TestEntry(path=str(pdf), ground_truth_folder="bank")],
+        )
+        test_set_file = tmp_path / "val.json"
+        write_test_set(test_set, test_set_file)
+
+        fake_interaction = {"stage": "summarize", "step": 1,
+                            "prompt": "p", "answer": "a", "reasoning": ""}
+
+        with patch("sortai.validator.LMStudioClient") as MockClient, \
+             patch("sortai.validator.Pipeline") as MockPipeline:
+            mock_client = MagicMock()
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            MockClient.return_value = mock_client
+            mock_pipeline = MagicMock()
+            mock_pipeline.run.return_value = (sub, "doc.pdf", "summary", [fake_interaction])
+            MockPipeline.return_value = mock_pipeline
+
+            runner = CliRunner()
+            cli_result = runner.invoke(
+                main,
+                ["--config", str(config_path), "validate", "run", str(test_set_file)],
+            )
+
+        assert cli_result.exit_code == 0, cli_result.output
+
+        results_path = tmp_path / "val_results.json"
+        assert results_path.exists(), "results JSON was not written"
+        data = json.loads(results_path.read_text(encoding="utf-8"))
+        assert isinstance(data, list)
+        assert len(data) == 1
+        entry = data[0]
+        assert entry["ground_truth_folder"] == "bank"
+        assert isinstance(entry["interactions"], list)
+        assert entry["interactions"][0]["stage"] == "summarize"

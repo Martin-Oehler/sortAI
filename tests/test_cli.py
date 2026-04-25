@@ -9,6 +9,7 @@ import pytest
 from click.testing import CliRunner
 
 from sortai.cli import main
+from sortai.llm_client import LLMResponse
 
 PROJECT_ROOT = Path(__file__).parent.parent
 TEST_INBOX = PROJECT_ROOT / "tests" / "fixtures" / "inbox"
@@ -107,7 +108,7 @@ class TestPingCommand:
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.complete.return_value = "Hello from LM Studio!"
+        mock_client.complete.return_value = LLMResponse(content="Hello from LM Studio!", reasoning="")
 
         with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
             runner = CliRunner()
@@ -123,7 +124,7 @@ class TestPingCommand:
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.complete.return_value = "Hello from LM Studio!"
+        mock_client.complete.return_value = LLMResponse(content="Hello from LM Studio!", reasoning="")
 
         with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
             runner = CliRunner()
@@ -139,7 +140,7 @@ class TestPingCommand:
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.complete.return_value = "Hi!"
+        mock_client.complete.return_value = LLMResponse(content="Hi!", reasoning="")
 
         with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
             runner = CliRunner()
@@ -157,7 +158,7 @@ class TestPingCommand:
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.complete.return_value = "Hi!"
+        mock_client.complete.return_value = LLMResponse(content="Hi!", reasoning="")
 
         with patch("sortai.llm_client.LMStudioClient", return_value=mock_client) as MockClient:
             runner = CliRunner()

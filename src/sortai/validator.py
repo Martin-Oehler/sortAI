@@ -36,6 +36,7 @@ class ValidationResult(TypedDict):
     prefix_match: bool      # predicted is ancestor/descendant of ground truth
     error: str              # "" if success
     summary: str            # LLM summary, "" on error
+    interactions: list      # list[StageInteraction]; [] on error
 
 
 # Aliases for backwards-compatibility in tests and user-facing code.
@@ -115,7 +116,7 @@ def _run_single(
 ) -> ValidationResult:
     """Run the pipeline on one entry; catch all exceptions into an error result."""
     try:
-        target_folder, _filename, summary = pipeline.run(Path(entry["path"]))
+        target_folder, _filename, summary, interactions = pipeline.run(Path(entry["path"]))
         exact, prefix = _compare_folders(target_folder, entry["ground_truth_folder"], archive_root)
         try:
             predicted_rel = target_folder.relative_to(archive_root).as_posix()
@@ -129,6 +130,7 @@ def _run_single(
             prefix_match=prefix,
             error="",
             summary=summary,
+            interactions=interactions,
         )
     except Exception as exc:  # noqa: BLE001
         return ValidationResult(
@@ -139,6 +141,7 @@ def _run_single(
             prefix_match=False,
             error=str(exc),
             summary="",
+            interactions=[],
         )
 
 
