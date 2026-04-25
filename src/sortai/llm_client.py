@@ -62,6 +62,32 @@ class LMStudioClient:
     # Completion
     # ------------------------------------------------------------------
 
+    def complete_structured(
+        self, prompt: str, json_schema: dict, system: Optional[str] = None
+    ) -> LLMResponse:
+        """Chat completion with a JSON schema enforced via structured output."""
+        messages: list[dict] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        response = self._openai.chat.completions.create(
+            model=self.model_name,
+            messages=messages,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "structured_response",
+                    "strict": True,
+                    "schema": json_schema,
+                },
+            },
+        )
+        content = response.choices[0].message.content or ""
+        return LLMResponse(content=content, reasoning="")
+
     def complete(self, prompt: str, system: Optional[str] = None) -> LLMResponse:
         """Single-turn chat completion; no conversation history kept."""
         payload: dict = {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import TypedDict
@@ -92,15 +93,25 @@ class Pipeline:
                 .replace("{{summary}}", summary)
                 .replace("{{document_text}}", short_text)
             )
-            resp = self.client.complete(prompt)
-            choice = resp.content.strip().splitlines()[0].strip()
+            schema = {
+                "type": "object",
+                "properties": {
+                    "reasoning": {"type": "string"},
+                    "choice": {"type": "string", "enum": children + ["."]},
+                },
+                "required": ["reasoning", "choice"],
+                "additionalProperties": False,
+            }
+            resp = self.client.complete_structured(prompt, schema)
+            parsed = json.loads(resp.content)
+            choice = parsed["choice"]
             step += 1
             interactions.append(StageInteraction(stage="navigate", step=step,
-                prompt=prompt, answer=choice, reasoning=resp.reasoning))
+                prompt=prompt, answer=choice, reasoning=parsed.get("reasoning", "")))
             if self.verbose:
                 self._log_exchange(f"Stage 2 — Navigate (step {step})", prompt, choice)
 
-            if choice == "." or choice not in children:
+            if choice == ".":
                 break
 
             current = current / choice
