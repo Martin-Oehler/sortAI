@@ -11,9 +11,9 @@ from pathlib import Path
 from rich.console import Console
 
 from sortai.config import Config
-from sortai.file_ops import log_decision, move_file
+from sortai.file_ops import log_decision, log_error, move_file
 from sortai.llm_client import LMStudioClient
-from sortai.pipeline import Pipeline
+from sortai.pipeline import ClassificationError, Pipeline
 
 console = Console()
 
@@ -145,6 +145,14 @@ class Watcher:
             )
             label = "[dim](dry run)[/dim] " if self.cfg.dry_run else ""
             console.print(f"[bold green]→[/bold green] {label}{dest}")
+        except ClassificationError as exc:
+            console.print(f"[yellow]Cannot classify {pdf_path.name}:[/yellow] {exc}")
+            log_error(
+                src=pdf_path.resolve(),
+                reason=str(exc),
+                log_path=self.cfg.log_file,
+                archive_root=self.cfg.archive,
+            )
         except Exception as exc:  # noqa: BLE001
             console.print(f"[bold red]Error processing {pdf_path.name}:[/bold red] {exc}")
 

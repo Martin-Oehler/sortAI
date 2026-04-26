@@ -18,6 +18,10 @@ from sortai.llm_client import LLMResponse, LMStudioClient
 from sortai.pdf_reader import extract_text
 
 
+class ClassificationError(Exception):
+    """Raised when the model determines the document cannot be classified."""
+
+
 class StageInteraction(TypedDict):
     stage: str
     step: int
@@ -61,16 +65,31 @@ class Pipeline:
         self._console.print(Panel(response.strip(), title="[dim]response[/dim]", border_style="green"))
 
     def summarize(self, text: str) -> tuple[str, list[StageInteraction]]:
-        """Stage 1 — summarize the document text."""
+        """Stage 1 — summarize the document text.
+
+        Raises ClassificationError if the model determines the content is unclassifiable.
+        """
         template = self.client.load_prompt("summarize")
         prompt = template.replace("{{document_text}}", _truncate(text))
-        resp = self.client.complete(prompt)
-        result = resp.content.strip()
+        schema = {
+            "type": "object",
+            "properties": {
+                "can_classify": {"type": "boolean"},
+                "summary": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["can_classify", "summary", "reason"],
+            "additionalProperties": False,
+        }
+        resp = self.client.complete_structured(prompt, schema)
+        parsed = json.loads(resp.content)
         interactions = [StageInteraction(stage="summarize", step=1,
-            prompt=prompt, answer=result, reasoning=resp.reasoning)]
+            prompt=prompt, answer=resp.content, reasoning=resp.reasoning)]
         if self.verbose:
-            self._log_exchange("Stage 1 — Summarize", prompt, result)
-        return result, interactions
+            self._log_exchange("Stage 1 — Summarize", prompt, resp.content)
+        if not parsed["can_classify"]:
+            raise ClassificationError(parsed.get("reason") or "model refused to classify")
+        return parsed["summary"].strip(), interactions
 
     def navigate_to_folder(self, text: str, summary: str) -> tuple[Path, list[StageInteraction]]:
         """Stage 2 — walk the archive tree to find the best target folder."""
