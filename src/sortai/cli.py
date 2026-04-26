@@ -139,8 +139,9 @@ def ping_lm_studio(ctx: click.Context) -> None:
 def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -> None:
     """Run the full LLM pipeline on a single PDF (prints proposed destination)."""
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    from sortai.file_ops import log_decision, log_error, move_file
     from sortai.llm_client import LMStudioClient
-    from sortai.pipeline import Pipeline
+    from sortai.pipeline import ClassificationError, Pipeline
 
     client = LMStudioClient(
         base_url=cfg.lm_studio.base_url,
@@ -165,7 +166,6 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
         else:
             client.unload_model()
             console.print("[cyan]Model unloaded.[/cyan]")
-        from sortai.file_ops import log_decision, move_file
         dest = move_file(
             src=pdf_file.resolve(),
             dest_dir=target_folder,
@@ -184,6 +184,15 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
         console.print(f"\n[bold green]→[/bold green] {label}{dest}")
         html_path = cfg.log_file.with_name(cfg.log_file.stem + "_report.html")
         console.print(f"[dim]Report: {html_path}[/dim]\n")
+    except ClassificationError as exc:
+        console.print(f"\n[yellow]Cannot classify:[/yellow] {exc}")
+        log_error(
+            src=pdf_file.resolve(),
+            reason=str(exc),
+            log_path=cfg.log_file,
+            archive_root=cfg.archive,
+        )
+        raise SystemExit(2)
     except RuntimeError as exc:
         console.print(f"\n[bold red]Error:[/bold red] {exc}")
         raise SystemExit(1)
@@ -215,15 +224,23 @@ def show_log(ctx: click.Context, count: int) -> None:
     table.add_column("Destination", style="green")
     table.add_column("Summary")
     table.add_column("Dry", justify="center")
+    table.add_column("Err", justify="center")
 
     for e in recent:
         orig = Path(e.get("original_path", "")).name
-        dest = dest_label(e.get("new_path", ""), e.get("archive_root"))
         ts = e.get("timestamp", "")[:19]
-        raw_summary = e.get("summary", "")
-        summary_cell = raw_summary[:80] + ("…" if len(raw_summary) > 80 else "")
         dry_marker = "[yellow]Y[/yellow]" if e.get("dry_run") else "N"
-        table.add_row(ts, orig, dest, summary_cell, dry_marker)
+        if e.get("error"):
+            raw = e.get("error_reason", "")
+            summary_cell = "[red]" + (raw[:80] + ("…" if len(raw) > 80 else "")) + "[/red]"
+            dest_cell = "[red]classification error[/red]"
+            err_marker = "[red]Y[/red]"
+        else:
+            dest_cell = dest_label(e.get("new_path", ""), e.get("archive_root"))
+            raw = e.get("summary", "")
+            summary_cell = raw[:80] + ("…" if len(raw) > 80 else "")
+            err_marker = "N"
+        table.add_row(ts, orig, dest_cell, summary_cell, dry_marker, err_marker)
 
     console.print(table)
 

@@ -56,6 +56,29 @@ def log_decision(
     render_html_report(log_path)
 
 
+def log_error(
+    src: Path,
+    reason: str,
+    log_path: Path,
+    archive_root: Path | None = None,
+) -> None:
+    """Append a classification-error entry to *log_path* and regenerate the HTML report."""
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "original_path": str(src.resolve()),
+        "new_path": "",
+        "archive_root": str(archive_root.resolve()) if archive_root else None,
+        "summary": "",
+        "dry_run": False,
+        "error": True,
+        "error_reason": reason,
+    }
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    render_html_report(log_path)
+
+
 def load_jsonl_entries(log_path: Path) -> list[dict]:
     """Parse all valid JSON-lines entries from *log_path*, skipping malformed lines."""
     entries: list[dict] = []
@@ -107,6 +130,7 @@ def _build_html(entries: list[dict]) -> str:
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     total = len(entries)
     dry_run_count = sum(1 for e in entries if e.get("dry_run"))
+    error_count = sum(1 for e in entries if e.get("error"))
     rows = _build_rows(reversed(entries))
 
     return f"""<!DOCTYPE html>
@@ -127,6 +151,9 @@ def _build_html(entries: list[dict]) -> str:
     tr:nth-child(even) {{ background: #f8f9fa; }}
     tr.dry-run {{ background: #fff3cd; }}
     tr.dry-run:nth-child(even) {{ background: #ffe8a0; }}
+    tr.error {{ background: #fde8e8; }}
+    tr.error:nth-child(even) {{ background: #f8d0d0; }}
+    .error-label {{ color: #c0392b; font-style: italic; }}
     td.path {{ font-family: monospace; font-size: 0.8rem; word-break: break-all; }}
     td.ts {{ white-space: nowrap; font-size: 0.8rem; color: #555; }}
     td.dry {{ text-align: center; }}
@@ -140,7 +167,8 @@ def _build_html(entries: list[dict]) -> str:
   <p class="meta">
     Generated: {generated_at} &nbsp;|&nbsp;
     Total: <strong>{total}</strong> &nbsp;|&nbsp;
-    Dry-run: <strong>{dry_run_count}</strong>
+    Dry-run: <strong>{dry_run_count}</strong> &nbsp;|&nbsp;
+    Errors: <strong>{error_count}</strong>
   </p>
   <input type="text" id="filterInput" placeholder="Filter rows…" oninput="filterRows()">
   <table id="logTable">
@@ -195,32 +223,54 @@ def _build_rows(entries) -> str:
         ts = _esc(e.get("timestamp", "")[:19])
         orig_path = e.get("original_path", "")
         new_path = e.get("new_path", "")
-        summary = e.get("summary", "")
         is_dry = e.get("dry_run", False)
+        is_error = e.get("error", False)
 
         orig_name = _esc(Path(orig_path).name) if orig_path else ""
         orig_path_attr = _esc(orig_path)
-        new_path_attr = _esc(new_path)
-        label = _esc(dest_label(new_path, e.get("archive_root")))
 
-        new_p = Path(new_path) if new_path else Path()
-        try:
-            dest_uri = _esc(new_p.as_uri())
-        except ValueError:
-            dest_uri = "#"
+        if is_error:
+            error_reason = _esc(e.get("error_reason", "unknown"))
+            dest_cell = '<span class="error-label">[classification error]</span>'
+            short_summary = f'<span class="error-label">{error_reason[:120]}</span>'
+            full_summary = error_reason
+            summary_cell = f'<details><summary>{short_summary}</summary><p>{_esc(e.get("error_reason", ""))}</p></details>'
+        else:
+            summary = e.get("summary", "")
+            new_path_attr = _esc(new_path)
+            label = _esc(dest_label(new_path, e.get("archive_root")))
+            new_p = Path(new_path) if new_path else Path()
+            try:
+                dest_uri = _esc(new_p.as_uri())
+            except ValueError:
+                dest_uri = "#"
+            dest_cell = f'<td class="path" title="{new_path_attr}"><a href="{dest_uri}">{label}</a></td>'
+            short_summary = _esc(summary[:120] + ("…" if len(summary) > 120 else ""))
+            full_summary = _esc(summary)
+            summary_cell = f'<details><summary>{short_summary}</summary><p>{full_summary}</p></details>'
 
-        short_summary = _esc(summary[:120] + ("…" if len(summary) > 120 else ""))
-        full_summary = _esc(summary)
         dry_class = " dry-run" if is_dry else ""
+        error_class = " error" if is_error else ""
         dry_text = "Yes" if is_dry else "No"
 
-        parts.append(
-            f'      <tr class="entry{dry_class}">\n'
-            f'        <td class="ts">{ts}</td>\n'
-            f'        <td class="path" title="{orig_path_attr}">{orig_name}</td>\n'
-            f'        <td class="path" title="{new_path_attr}"><a href="{dest_uri}">{label}</a></td>\n'
-            f'        <td><details><summary>{short_summary}</summary><p>{full_summary}</p></details></td>\n'
-            f'        <td class="dry">{dry_text}</td>\n'
-            f'      </tr>'
-        )
+        if is_error:
+            parts.append(
+                f'      <tr class="entry{error_class}">\n'
+                f'        <td class="ts">{ts}</td>\n'
+                f'        <td class="path" title="{orig_path_attr}">{orig_name}</td>\n'
+                f'        <td class="path">{dest_cell}</td>\n'
+                f'        <td>{summary_cell}</td>\n'
+                f'        <td class="dry">{dry_text}</td>\n'
+                f'      </tr>'
+            )
+        else:
+            parts.append(
+                f'      <tr class="entry{dry_class}">\n'
+                f'        <td class="ts">{ts}</td>\n'
+                f'        <td class="path" title="{orig_path_attr}">{orig_name}</td>\n'
+                f'        {dest_cell}\n'
+                f'        <td>{summary_cell}</td>\n'
+                f'        <td class="dry">{dry_text}</td>\n'
+                f'      </tr>'
+            )
     return "\n".join(parts)
