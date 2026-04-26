@@ -86,7 +86,11 @@ class Pipeline:
         interactions = [StageInteraction(stage="summarize", step=1,
             prompt=prompt, answer=resp.content, reasoning=resp.reasoning)]
         if self.verbose:
-            self._log_exchange("Stage 1 — Summarize", prompt, resp.content)
+            if parsed["can_classify"]:
+                self._log_exchange("Stage 1 — Summarize", prompt, parsed["summary"])
+            else:
+                self._log_exchange("Stage 1 — Summarize", prompt,
+                    f"[CANNOT CLASSIFY] {parsed.get('reason', '')}")
         if not parsed["can_classify"]:
             raise ClassificationError(parsed.get("reason") or "model refused to classify")
         return parsed["summary"].strip(), interactions
