@@ -2,8 +2,6 @@
 
 Automatically sort PDFs into an existing folder hierarchy using a locally-running LLM. sortAI reads each document, navigates your archive structure, picks the right folder, and generates an appropriate filename — all without moving anything to the cloud.
 
-> **This project is WIP**
-
 ## How it works
 
 1. **Extract** — reads the text content of a PDF
@@ -35,6 +33,21 @@ cp config/config.example.toml config/config.toml
 # Edit config/config.toml with your inbox path, archive path, and LM Studio settings
 ```
 
+### Setting up LM Studio
+
+1. Download and install [LM Studio](https://lmstudio.ai/).
+2. Download a model inside LM Studio (e.g. `google/gemma-4-e4b`).
+3. Set the downloaded model's identifier as `model` in `config/config.toml`.
+4. Start the local server:
+   - Click the **Developer** tab in the left sidebar.
+   - Click the toggle next to **Status: Stopped** to start the server.
+   - The status should change to **Running** on port `1234`.
+5. Verify the connection:
+   ```bash
+   sortai ping
+   ```
+   You should see the model load, a short response from the LLM, and a confirmation that the model was unloaded.
+
 ### Configuration
 
 `config/config.toml` (copy from `config/config.example.toml`):
@@ -50,21 +63,6 @@ model       = "your-model-id"
 temperature = 0.2
 max_tokens  = 2048
 ```
-
-## Setting up LM Studio
-
-1. Download and install [LM Studio](https://lmstudio.ai/).
-2. Download a model inside LM Studio (e.g. `google/gemma-4-e4b`).
-3. Set the downloaded model's identifier as `model` in `config/config.toml`.
-4. Start the local server:
-   - Click the **Developer** tab in the left sidebar.
-   - Click the toggle next to **Status: Stopped** to start the server.
-   - The status should change to **Running** on port `1234`.
-5. Verify the connection:
-   ```bash
-   sortai ping
-   ```
-   You should see the model load, a short response from the LLM, and a confirmation that the model was unloaded.
 
 ## CLI reference
 
@@ -128,6 +126,44 @@ sortai validate run test_set.json
 ```
 
 The test set is a plain JSON file — commit it to track accuracy changes over time, or use it to compare different models and prompt configurations.
+
+## Giving the LLM more context
+
+By default the LLM sees only the names of available sub-folders at each navigation step. Two optional mechanisms provide richer context:
+
+### Subfolder previews
+
+Each listed folder automatically shows a sample of its own sub-folders, helping the LLM understand the folder's internal structure:
+
+```
+- invoices (contains: 2024, 2023, 2022)
+- contracts (contains: active, archived)
+- bank-statements
+```
+
+Control the number of sub-folders shown with `subfolder_preview_count` (default: 5, set to 0 to disable).
+
+### Folder descriptions
+
+Place a `folder-description.md` file inside any folder to give the LLM a plain-language description of what belongs there:
+
+```
+# archive/invoices/folder-description.md
+Supplier, utility, and service invoices sorted by calendar year.
+```
+
+The description is appended to the folder's entry in the navigation prompt:
+
+```
+- invoices (contains: 2024, 2023, 2022) — Supplier, utility, and service invoices sorted by calendar year.
+```
+
+Both the filename and the subfolder preview count are configurable in `config/config.toml`:
+
+```toml
+folder_description_filename = "folder-description.md"
+subfolder_preview_count = 5
+```
 
 ## Running the tests
 

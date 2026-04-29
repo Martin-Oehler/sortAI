@@ -4,7 +4,7 @@ You are a filing assistant. Your task is to identify the single best sub-folder 
 
 You are currently looking at the folder: **{{current_folder}}**
 
-The sub-folders available here are:
+The sub-folders available here are (sub-folder contents and descriptions shown where available):
 
 {{folder_listing}}
 

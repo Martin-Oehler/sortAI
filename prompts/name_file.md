@@ -9,6 +9,7 @@ Existing files in that folder (for naming consistency):
 {{existing_files}}
 
 Rules for the file name:
+- Use the language of the document
 - Adhere to the naming scheme of other files in the folder. If the folder is empty or naming is inconsistent, stick to these general rules:
 - Use only letters, digits, hyphens `-`, and underscores `_`
 - Use lowercase only
