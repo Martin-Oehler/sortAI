@@ -45,6 +45,7 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
 
     @app.get("/api/queue")
     def get_queue() -> list:
+        _store.reload()  # type: ignore[union-attr]
         return [asdict(i) for i in _store.list_all()]  # type: ignore[union-attr]
 
     @app.get("/api/log")
@@ -85,6 +86,7 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
 
     @app.post("/api/accept/{item_id}")
     def accept_item(item_id: str) -> JSONResponse:
+        _store.reload()  # type: ignore[union-attr]
         try:
             item = _store.get(item_id)  # type: ignore[union-attr]
         except KeyError:
@@ -110,6 +112,7 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
 
     @app.post("/api/reject/{item_id}")
     def reject_item(item_id: str) -> JSONResponse:
+        _store.reload()  # type: ignore[union-attr]
         try:
             item = _store.get(item_id)  # type: ignore[union-attr]
         except KeyError:

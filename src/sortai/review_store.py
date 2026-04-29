@@ -77,6 +77,12 @@ class ReviewStore:
         with self._lock:
             return list(self._items)
 
+    def reload(self) -> None:
+        """Re-read the queue file from disk (picks up changes from other processes)."""
+        with self._lock:
+            if self._path.exists():
+                self._load()
+
     def mark_accepted(self, item_id: str, resolved_path: str) -> None:
         with self._lock:
             for item in self._items:
