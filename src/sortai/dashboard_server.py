@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,13 +27,18 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
     _cfg = cfg
     _store = store
 
-    app = FastAPI(title="sortAI Dashboard")
-
-    @app.on_event("startup")
-    async def _startup() -> None:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
         global _loop
         _loop = asyncio.get_event_loop()
-        _start_file_watcher()
+        observer = _start_file_watcher()
+        try:
+            yield
+        finally:
+            observer.stop()
+            observer.join(timeout=2)
+
+    app = FastAPI(title="sortAI Dashboard", lifespan=lifespan)
 
     # ------------------------------------------------------------------
     # Routes
@@ -165,7 +171,7 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
 # ------------------------------------------------------------------
 
 
-def _start_file_watcher() -> None:
+def _start_file_watcher():
     from watchdog.events import FileSystemEventHandler
     from watchdog.observers import Observer
 
@@ -184,8 +190,8 @@ def _start_file_watcher() -> None:
 
     observer = Observer()
     observer.schedule(_Handler(), str(log_dir), recursive=False)
-    observer.daemon = True  # type: ignore[assignment]
     observer.start()
+    return observer
 
 
 def _broadcast(event_type: str) -> None:
@@ -219,4 +225,7 @@ def run(cfg: "Config", store: "ReviewStore", port: int, open_browser: bool) -> N
             webbrowser.open(f"http://localhost:{port}")
         threading.Thread(target=_open, daemon=True).start()
 
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    try:
+        uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    except KeyboardInterrupt:
+        pass
