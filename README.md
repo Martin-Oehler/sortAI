@@ -77,7 +77,8 @@ sortai [--config FILE] [--dry-run] COMMAND
 | `sortai tree` | Print the archive folder tree |
 | `sortai ping` | Test LM Studio connection (load, hello, unload) |
 | `sortai process PDF_FILE [--verbose] [--warm]` | Run the full sort pipeline on a single PDF |
-| `sortai watch [--once] [--verbose]` | Watch inbox and auto-process new PDFs |
+| `sortai watch [--once] [--verbose] [--review]` | Watch inbox and auto-process new PDFs |
+| `sortai dashboard [--port PORT] [--no-browser]` | Start the review dashboard web server |
 | `sortai log [-n N]` | Show recent sort decisions |
 | `sortai report` | Regenerate the HTML audit report |
 | `sortai validate sample OUTPUT [-n N]` | Sample N PDFs from archive into a test set file |
@@ -104,6 +105,50 @@ sortai validate sample my_test_set.json -n 20
 # Evaluate sorting accuracy against the test set (no files are moved)
 sortai validate run my_test_set.json
 ```
+
+## Review dashboard
+
+The review dashboard lets you inspect LLM decisions before files are moved. It is a persistent local web server that can run at any time, independently of the watcher.
+
+### Workflow
+
+1. **Start the dashboard** (keep it running in one terminal):
+   ```bash
+   sortai dashboard
+   # Opens http://localhost:8765 in your browser automatically
+   ```
+
+2. **Watch in review mode** (in another terminal):
+   ```bash
+   sortai watch --review
+   ```
+   Instead of moving files directly, the watcher places each incoming PDF in a `_review/` staging folder and adds an entry to `logs/review_queue.json`.
+
+3. **Review in the browser**: staged items appear in the "Needs Review" section at the top. Click a row to preview the PDF. Press **Accept ✓** (or `Y`) to move the file to the proposed archive location, or **Reject ✗** (or `N`) to move it to `_rejected/`.
+
+4. The history log below shows all past decisions (auto-accepted items from normal watch mode as well as accepted/rejected review items), updated live as files are processed.
+
+### Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `J` / `K` | Move focus down / up |
+| `Y` | Accept focused staged item |
+| `N` | Reject focused staged item |
+
+### Dashboard configuration
+
+```toml
+[review]
+port = 8765
+auto_open_browser = true
+# staging_dir  = "/path/to/_review"    # default: inbox parent / "_review"
+# rejected_dir = "/path/to/_rejected"  # default: inbox parent / "_rejected"
+```
+
+### Normal mode is unchanged
+
+Running `sortai watch` **without** `--review` behaves exactly as before — files are auto-moved and logged immediately.
 
 ## Validation
 
