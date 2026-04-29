@@ -19,6 +19,13 @@ dry_run = false
 # Maximum folder depth the navigation loop will traverse before stopping.
 max_navigate_depth = 10
 
+# File name to look for inside each folder as a human-written description.
+# If found, its contents are shown to the LLM as extra context for that folder.
+folder_description_filename = "folder-description.md"
+
+# How many sub-folders to show as a preview for each listed folder (0 = disable).
+subfolder_preview_count = 5
+
 [lm_studio]
 # Base URL of your LM Studio server.
 base_url = "http://localhost:1234"

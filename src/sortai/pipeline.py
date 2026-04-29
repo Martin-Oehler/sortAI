@@ -13,7 +13,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 
 from sortai.config import Config
-from sortai.folder_navigator import is_leaf, list_children
+from sortai.folder_navigator import is_leaf, list_children, list_children_with_info
 from sortai.llm_client import LLMResponse, LMStudioClient
 from sortai.pdf_reader import extract_text
 
@@ -108,7 +108,20 @@ class Pipeline:
             if not children or is_leaf(current):
                 break
 
-            folder_listing = "\n".join(f"- {c}" for c in children)
+            folder_infos = list_children_with_info(
+                current,
+                self.config.folder_description_filename,
+                self.config.subfolder_preview_count,
+            )
+            listing_lines = []
+            for info in folder_infos:
+                line = f"- {info.name}"
+                if info.subfolders:
+                    line += f" (contains: {', '.join(info.subfolders)})"
+                if info.description:
+                    line += f" — {info.description}"
+                listing_lines.append(line)
+            folder_listing = "\n".join(listing_lines)
             prompt = (
                 template
                 .replace("{{current_folder}}", str(current))
