@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sortAI Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; font-size: 14px; background: #f0f2f5; color: #1a1a2e; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Header ─────────────────────────────────── */
+  #header { background: #1a1a2e; color: #fff; padding: 0.6rem 1rem; display: flex; align-items: center; gap: 1rem; flex-shrink: 0; }
+  #header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.02em; }
+  #pending-badge { background: #e74c3c; color: #fff; border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.75rem; font-weight: 700; display: none; }
+  #pending-badge.visible { display: inline-block; }
+  #conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #e74c3c; margin-left: auto; flex-shrink: 0; }
+  #conn-dot.connected { background: #27ae60; }
+
+  /* ── Main layout ─────────────────────────────── */
+  #main { flex: 1; display: flex; overflow: hidden; gap: 0; }
+
+  /* ── Left panel ──────────────────────────────── */
+  #left { width: 420px; min-width: 280px; display: flex; flex-direction: column; overflow: hidden; background: #fff; border-right: 1px solid #dde; }
+
+  /* ── Review section ──────────────────────────── */
+  #review-section { flex-shrink: 0; border-bottom: 2px solid #e0e3ea; }
+  #review-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 0.75rem; background: #fff8e1; border-bottom: 1px solid #ffe082; }
+  #review-title { font-weight: 700; font-size: 0.8rem; color: #b45309; text-transform: uppercase; letter-spacing: 0.05em; flex: 1; }
+  #accept-all-btn { font-size: 0.75rem; padding: 0.2rem 0.6rem; background: #27ae60; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+  #accept-all-btn:hover { background: #219150; }
+  #review-list { overflow-y: auto; max-height: 340px; }
+  #review-empty { padding: 0.6rem 0.75rem; color: #888; font-size: 0.8rem; font-style: italic; }
+
+  /* ── History section ─────────────────────────── */
+  #history-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #history-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 0.75rem; background: #f7f8fc; border-bottom: 1px solid #e0e3ea; flex-shrink: 0; }
+  #history-title { font-weight: 700; font-size: 0.8rem; color: #555; text-transform: uppercase; letter-spacing: 0.05em; flex: 1; }
+  #filter-select { font-size: 0.78rem; padding: 0.15rem 0.4rem; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
+  #history-list { flex: 1; overflow-y: auto; }
+
+  /* ── Row cards ────────────────────────────────── */
+  .row { padding: 0.5rem 0.75rem; border-bottom: 1px solid #eef0f4; cursor: pointer; transition: background 0.1s; display: flex; align-items: flex-start; gap: 0.5rem; }
+  .row:hover { background: #f0f4ff; }
+  .row.focused { background: #e8efff; outline: 2px solid #4a6cf7; outline-offset: -2px; }
+  .row-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+  .row-body { flex: 1; min-width: 0; }
+  .row-filename { font-weight: 600; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-dest { font-size: 0.75rem; color: #555; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-summary { font-size: 0.75rem; color: #777; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-actions { display: flex; gap: 0.3rem; margin-top: 0.35rem; }
+  .btn-accept { background: #27ae60; color: #fff; border: none; border-radius: 4px; padding: 0.2rem 0.55rem; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+  .btn-accept:hover { background: #219150; }
+  .btn-reject { background: #e74c3c; color: #fff; border: none; border-radius: 4px; padding: 0.2rem 0.55rem; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
+  .btn-reject:hover { background: #c0392b; }
+
+  /* ── Right panel (PDF preview) ───────────────── */
+  #right { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #e8eaf0; }
+  #preview-hint { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font-size: 0.9rem; }
+  #pdf-frame { flex: 1; border: none; width: 100%; height: 100%; display: none; }
+  #pdf-frame.visible { display: block; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>sortAI Dashboard</h1>
+  <span id="pending-badge"></span>
+  <span id="conn-dot" title="Live connection"></span>
+</div>
+
+<div id="main">
+  <!-- Left panel -->
+  <div id="left">
+
+    <!-- Needs Review -->
+    <div id="review-section">
+      <div id="review-header">
+        <span id="review-title">⚠ Needs Review</span>
+        <button id="accept-all-btn" onclick="acceptAll()">Accept All</button>
+      </div>
+      <div id="review-list">
+        <div id="review-empty">No items awaiting review.</div>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div id="history-section">
+      <div id="history-header">
+        <span id="history-title">History</span>
+        <select id="filter-select" onchange="renderHistory()">
+          <option value="all">All</option>
+          <option value="accepted">Accepted</option>
+          <option value="rejected">Rejected</option>
+          <option value="error">Errors</option>
+        </select>
+      </div>
+      <div id="history-list"></div>
+    </div>
+
+  </div>
+
+  <!-- Right panel -->
+  <div id="right">
+    <div id="preview-hint">Click a row to preview the PDF</div>
+    <iframe id="pdf-frame" src="about:blank"></iframe>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ── State ──────────────────────────────────────────────────────────────────
+let queueItems = [];   // from /api/queue
+let logEntries = [];   // from /api/log
+let focusedId = null;  // currently focused row id
+
+// ── Init ───────────────────────────────────────────────────────────────────
+async function init() {
+  await Promise.all([fetchQueue(), fetchLog()]);
+  renderAll();
+  connectSSE();
+}
+
+// ── Data fetching ──────────────────────────────────────────────────────────
+async function fetchQueue() {
+  try {
+    const r = await fetch('/api/queue');
+    queueItems = await r.json();
+  } catch (e) { console.error('fetchQueue', e); }
+}
+
+async function fetchLog() {
+  try {
+    const r = await fetch('/api/log');
+    logEntries = await r.json();
+  } catch (e) { console.error('fetchLog', e); }
+}
+
+// ── SSE ────────────────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource('/api/events');
+  es.addEventListener('queue_updated', async () => {
+    await fetchQueue();
+    renderAll();
+  });
+  es.addEventListener('log_updated', async () => {
+    await fetchLog();
+    renderHistory();
+  });
+  es.onopen = () => document.getElementById('conn-dot').classList.add('connected');
+  es.onerror = () => {
+    document.getElementById('conn-dot').classList.remove('connected');
+    setTimeout(connectSSE, 3000);
+    es.close();
+  };
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function renderAll() {
+  renderReview();
+  renderHistory();
+}
+
+function renderReview() {
+  const pending = queueItems.filter(i => i.status === 'pending');
+  const badge = document.getElementById('pending-badge');
+  badge.textContent = 'Needs Review: ' + pending.length;
+  badge.classList.toggle('visible', pending.length > 0);
+
+  const list = document.getElementById('review-list');
+  const empty = document.getElementById('review-empty');
+  if (pending.length === 0) {
+    list.innerHTML = '';
+    list.appendChild(empty);
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = pending.map(item => `
+    <div class="row${focusedId === item.id ? ' focused' : ''}"
+         id="row-${item.id}"
+         onclick="selectRow('${item.id}', 'queue')">
+      <span class="row-icon">📄</span>
+      <div class="row-body">
+        <div class="row-filename" title="${esc(item.original_filename)}">${esc(item.original_filename)}</div>
+        <div class="row-dest">→ ${esc(item.proposed_folder)}/${esc(item.proposed_filename)}</div>
+        <div class="row-summary">${esc(item.summary)}</div>
+        <div class="row-actions">
+          <button class="btn-accept" onclick="event.stopPropagation();acceptItem('${item.id}')">Accept ✓</button>
+          <button class="btn-reject" onclick="event.stopPropagation();rejectItem('${item.id}')">Reject ✗</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function renderHistory() {
+  const filter = document.getElementById('filter-select').value;
+
+  // Build merged history: rejected queue items + all log entries
+  const rejected = queueItems
+    .filter(i => i.status === 'rejected')
+    .map(i => ({
+      id: i.id,
+      type: 'queue',
+      timestamp: i.timestamp,
+      filename: i.original_filename,
+      dest: '_rejected/' + i.original_filename,
+      status: 'rejected',
+      summary: i.summary,
+    }));
+
+  const logged = logEntries.map((e, idx) => ({
+    id: 'log-' + idx,
+    type: 'log',
+    logIdx: idx,
+    timestamp: e.timestamp || '',
+    filename: basename(e.original_path || ''),
+    dest: e.error ? '' : relPath(e.new_path || '', e.archive_root || ''),
+    status: e.error ? 'error' : 'accepted',
+    summary: e.error ? (e.error_reason || '') : (e.summary || ''),
+  }));
+
+  const all = [...rejected, ...logged].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+  const filtered = filter === 'all' ? all : all.filter(r => r.status === filter);
+
+  const list = document.getElementById('history-list');
+  if (filtered.length === 0) {
+    list.innerHTML = '<div style="padding:0.6rem 0.75rem;color:#888;font-style:italic;font-size:0.8rem">No entries.</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(r => {
+    const icon = r.status === 'accepted' ? '✓' : r.status === 'rejected' ? '✗' : '⚠';
+    const iconColor = r.status === 'accepted' ? '#27ae60' : r.status === 'rejected' ? '#e74c3c' : '#e67e22';
+    const ts = (r.timestamp || '').slice(0, 16).replace('T', ' ');
+    const fileUrl = r.type === 'queue' ? `/files/queue/${r.id}` : `/files/log/${r.logIdx}`;
+    return `<div class="row${focusedId === r.id ? ' focused' : ''}"
+         id="row-${r.id}"
+         onclick="selectRow('${r.id}', '${r.type}', '${fileUrl}')">
+      <span class="row-icon" style="color:${iconColor}">${icon}</span>
+      <div class="row-body">
+        <div class="row-filename" title="${esc(r.filename)}">${esc(r.filename)}</div>
+        <div class="row-dest">${r.dest ? esc(r.dest) : '<span style="color:#e67e22">'+esc(r.summary.slice(0,80))+'</span>'}</div>
+        <div class="row-summary" style="color:#999">${esc(ts)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Actions ────────────────────────────────────────────────────────────────
+function selectRow(id, type, fileUrl) {
+  focusedId = id;
+  renderAll();
+
+  const url = fileUrl || (type === 'queue' ? `/files/queue/${id}` : null);
+  if (!url) return;
+  const frame = document.getElementById('pdf-frame');
+  const hint = document.getElementById('preview-hint');
+  frame.src = url;
+  frame.classList.add('visible');
+  hint.style.display = 'none';
+}
+
+async function acceptItem(id) {
+  try {
+    const r = await fetch(`/api/accept/${id}`, { method: 'POST' });
+    if (!r.ok) { const e = await r.json(); alert('Accept failed: ' + (e.detail || r.status)); }
+  } catch (e) { alert('Accept error: ' + e); }
+  await fetchQueue();
+  renderAll();
+}
+
+async function rejectItem(id) {
+  try {
+    const r = await fetch(`/api/reject/${id}`, { method: 'POST' });
+    if (!r.ok) { const e = await r.json(); alert('Reject failed: ' + (e.detail || r.status)); }
+  } catch (e) { alert('Reject error: ' + e); }
+  await fetchQueue();
+  renderAll();
+}
+
+async function acceptAll() {
+  const pending = queueItems.filter(i => i.status === 'pending');
+  for (const item of pending) {
+    await fetch(`/api/accept/${item.id}`, { method: 'POST' });
+  }
+  await fetchQueue();
+  await fetchLog();
+  renderAll();
+}
+
+// ── Keyboard shortcuts ─────────────────────────────────────────────────────
+function allFocusableRows() {
+  const pending = queueItems.filter(i => i.status === 'pending');
+  const filter = document.getElementById('filter-select').value;
+  const rejected = queueItems.filter(i => i.status === 'rejected')
+    .map(i => ({ id: i.id, type: 'queue', timestamp: i.timestamp }));
+  const logged = logEntries.map((e, idx) => ({
+    id: 'log-' + idx,
+    type: 'log',
+    logIdx: idx,
+    timestamp: e.timestamp || '',
+    status: e.error ? 'error' : 'accepted',
+  }));
+  const history = [...rejected, ...logged].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  const filteredHistory = filter === 'all' ? history : history.filter(r => r.status === filter);
+  return [...pending.map(i => ({ id: i.id, type: 'queue' })), ...filteredHistory];
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON') return;
+  const rows = allFocusableRows();
+  if (rows.length === 0) return;
+  const idx = focusedId ? rows.findIndex(r => r.id === focusedId) : -1;
+
+  if (e.key === 'j' || e.key === 'J') {
+    const next = rows[Math.min(idx + 1, rows.length - 1)];
+    selectRow(next.id, next.type);
+    scrollToRow(next.id);
+    e.preventDefault();
+  } else if (e.key === 'k' || e.key === 'K') {
+    const prev = rows[Math.max(idx - 1, 0)];
+    selectRow(prev.id, prev.type);
+    scrollToRow(prev.id);
+    e.preventDefault();
+  } else if ((e.key === 'y' || e.key === 'Y') && focusedId) {
+    const item = queueItems.find(i => i.id === focusedId && i.status === 'pending');
+    if (item) acceptItem(focusedId);
+  } else if ((e.key === 'n' || e.key === 'N') && focusedId) {
+    const item = queueItems.find(i => i.id === focusedId && i.status === 'pending');
+    if (item) rejectItem(focusedId);
+  }
+});
+
+function scrollToRow(id) {
+  const el = document.getElementById('row-' + id);
+  if (el) el.scrollIntoView({ block: 'nearest' });
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function basename(p) {
+  return p.replace(/\\/g, '/').split('/').pop() || p;
+}
+
+function relPath(newPath, archiveRoot) {
+  if (!newPath) return '';
+  const np = newPath.replace(/\\/g, '/');
+  const ar = (archiveRoot || '').replace(/\\/g, '/').replace(/\/?$/, '/');
+  if (ar && np.startsWith(ar)) return np.slice(ar.length);
+  return basename(np);
+}
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

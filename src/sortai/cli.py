@@ -266,18 +266,50 @@ def generate_report(ctx: click.Context) -> None:
 @main.command("watch")
 @click.option("--once", is_flag=True, default=False, help="Process existing files then exit.")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Print full prompt/response for each LLM call.")
+@click.option("--review", "review_mode", is_flag=True, default=False, help="Stage files for human review instead of auto-moving.")
 @click.pass_context
-def watch_inbox(ctx: click.Context, once: bool, verbose: bool) -> None:
+def watch_inbox(ctx: click.Context, once: bool, verbose: bool, review_mode: bool) -> None:
     """Monitor the inbox folder and process new PDFs automatically."""
+    from sortai.review_store import ReviewStore
     from sortai.watcher import Watcher
 
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
-    watcher = Watcher(cfg, verbose=verbose)
+
+    review_store = None
+    if review_mode:
+        queue_path = cfg.log_file.parent / "review_queue.json"
+        review_store = ReviewStore(queue_path)
+        console.print(f"[yellow]Review mode:[/yellow] files will be staged for approval. Queue: {queue_path}")
+
+    watcher = Watcher(cfg, verbose=verbose, review_mode=review_mode, review_store=review_store)
 
     if once:
         watcher.run_once()
     else:
         watcher.watch()
+
+
+@main.command("dashboard")
+@click.option("--port", default=None, type=int, help="Port to listen on (default: from config or 8765).")
+@click.option("--no-browser", is_flag=True, default=False, help="Do not open browser automatically.")
+@click.pass_context
+def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool) -> None:
+    """Start the review dashboard web server."""
+    from sortai.dashboard_server import run as run_dashboard
+    from sortai.review_store import ReviewStore
+
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    queue_path = cfg.log_file.parent / "review_queue.json"
+    review_store = ReviewStore(queue_path)
+
+    effective_port = port if port is not None else cfg.review.port
+    open_browser = (not no_browser) and cfg.review.auto_open_browser
+
+    console.print(
+        f"[bold green]Dashboard[/bold green] starting at "
+        f"[cyan]http://localhost:{effective_port}[/cyan] — press Ctrl-C to stop."
+    )
+    run_dashboard(cfg, review_store, port=effective_port, open_browser=open_browser)
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 
@@ -14,6 +15,9 @@ from sortai.config import Config
 from sortai.file_ops import log_decision, log_error, move_file
 from sortai.llm_client import LMStudioClient
 from sortai.pipeline import ClassificationError, Pipeline
+
+if TYPE_CHECKING:
+    from sortai.review_store import ReviewStore
 
 console = Console()
 
@@ -24,9 +28,17 @@ _DEBOUNCE_SECONDS = 2.0
 class Watcher:
     """Watch *cfg.inbox* for new PDFs and run the full pipeline on each one."""
 
-    def __init__(self, cfg: Config, verbose: bool = False) -> None:
+    def __init__(
+        self,
+        cfg: Config,
+        verbose: bool = False,
+        review_mode: bool = False,
+        review_store: "ReviewStore | None" = None,
+    ) -> None:
         self.cfg = cfg
         self.verbose = verbose
+        self.review_mode = review_mode
+        self.review_store = review_store
         self._pending: dict[Path, float] = {}
         self._lock = threading.Lock()
         self._queue: queue.Queue[Path] = queue.Queue()
@@ -127,24 +139,27 @@ class Watcher:
         try:
             with client:
                 pipeline = Pipeline(self.cfg, client, verbose=self.verbose)
-                target_folder, filename, summary, _ = pipeline.run(pdf_path)
+                target_folder, filename, summary, interactions = pipeline.run(pdf_path)
 
-            dest = move_file(
-                src=pdf_path.resolve(),
-                dest_dir=target_folder,
-                new_name=filename,
-                dry_run=self.cfg.dry_run,
-            )
-            log_decision(
-                src=pdf_path.resolve(),
-                dest=dest,
-                summary=summary,
-                dry_run=self.cfg.dry_run,
-                log_path=self.cfg.log_file,
-                archive_root=self.cfg.archive,
-            )
-            label = "[dim](dry run)[/dim] " if self.cfg.dry_run else ""
-            console.print(f"[bold green]→[/bold green] {label}{dest}")
+            if self.review_mode and self.review_store is not None:
+                self._stage_for_review(pdf_path, target_folder, filename, summary, interactions)
+            else:
+                dest = move_file(
+                    src=pdf_path.resolve(),
+                    dest_dir=target_folder,
+                    new_name=filename,
+                    dry_run=self.cfg.dry_run,
+                )
+                log_decision(
+                    src=pdf_path.resolve(),
+                    dest=dest,
+                    summary=summary,
+                    dry_run=self.cfg.dry_run,
+                    log_path=self.cfg.log_file,
+                    archive_root=self.cfg.archive,
+                )
+                label = "[dim](dry run)[/dim] " if self.cfg.dry_run else ""
+                console.print(f"[bold green]→[/bold green] {label}{dest}")
         except ClassificationError as exc:
             console.print(f"[yellow]Cannot classify {pdf_path.name}:[/yellow] {exc}")
             log_error(
@@ -155,6 +170,42 @@ class Watcher:
             )
         except Exception as exc:  # noqa: BLE001
             console.print(f"[bold red]Error processing {pdf_path.name}:[/bold red] {exc}")
+
+    def _stage_for_review(
+        self,
+        pdf_path: Path,
+        target_folder: Path,
+        filename: str,
+        summary: str,
+        interactions: list,
+    ) -> None:
+        from sortai.review_store import make_review_item
+
+        staging_dir = (
+            self.cfg.review.staging_dir
+            if self.cfg.review.staging_dir
+            else self.cfg.inbox.parent / "_review"
+        )
+        staged = move_file(
+            src=pdf_path.resolve(),
+            dest_dir=staging_dir,
+            new_name=pdf_path.name,
+            dry_run=False,
+        )
+        proposed_folder = target_folder.relative_to(self.cfg.archive).as_posix()
+        item = make_review_item(
+            original_filename=pdf_path.name,
+            staging_path=staged,
+            proposed_folder=proposed_folder,
+            proposed_filename=filename,
+            summary=summary,
+            interactions=interactions,
+        )
+        self.review_store.add(item)  # type: ignore[union-attr]
+        console.print(
+            f"[yellow]⚠ Staged for review:[/yellow] {pdf_path.name} "
+            f"→ [dim]{staged}[/dim]"
+        )
 
 
 class _PDFHandler:

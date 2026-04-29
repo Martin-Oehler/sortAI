@@ -42,3 +42,16 @@ max_tokens = 2048
 # Reasoning effort: "off", "low", "medium", "high", or "on".
 # Defaults to the automatically chosen setting for the model. Not all models support this.
 # reasoning = "on"
+
+[review]
+# Port for the dashboard web server.
+port = 8765
+
+# Open the browser automatically when 'sortai dashboard' starts.
+auto_open_browser = true
+
+# Where to move files while awaiting review (default: inbox parent / "_review").
+# staging_dir = "/path/to/_review"
+
+# Where to move rejected files (default: inbox parent / "_rejected").
+# rejected_dir = "/path/to/_rejected"
