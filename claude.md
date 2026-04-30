@@ -5,7 +5,7 @@
 - You are an autonomous coding agent. Perform tests and fully verify all your work by yourself before coming back to me
 - Give me proof of your testing and results
 - Run the automated tests after every change
-- Additionally, you should run the cli by yourself to test your work
+- Additionally, you should call the sortai cli by yourself to test your work
 - The tests folder contains everything you need to perform closed-loop testing by yourself:
   - a config in tests/config/config.toml
   - an inbox with documents in tests/fixtures/inbox (you might need to restore them from git or move them back from the archive if previous testing moved them already)
