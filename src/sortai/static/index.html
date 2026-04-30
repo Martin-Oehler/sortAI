@@ -78,9 +78,7 @@
         <span id="review-title">⚠ Needs Review</span>
         <button id="accept-all-btn" onclick="acceptAll()">Accept All</button>
       </div>
-      <div id="review-list">
-        <div id="review-empty">No items awaiting review.</div>
-      </div>
+      <div id="review-list"></div>
     </div>
 
     <!-- History -->
@@ -168,14 +166,10 @@ function renderReview() {
   badge.classList.toggle('visible', pending.length > 0);
 
   const list = document.getElementById('review-list');
-  const empty = document.getElementById('review-empty');
   if (pending.length === 0) {
-    list.innerHTML = '';
-    list.appendChild(empty);
-    empty.style.display = '';
+    list.innerHTML = '<div id="review-empty">No items awaiting review.</div>';
     return;
   }
-  empty.style.display = 'none';
   list.innerHTML = pending.map(item => `
     <div class="row${focusedId === item.id ? ' focused' : ''}"
          id="row-${item.id}"
