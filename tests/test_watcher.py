@@ -635,7 +635,6 @@ class TestProcess:
             prompts_dir=cfg.prompts_dir,
             temperature=cfg.lm_studio.temperature,
             max_tokens=cfg.lm_studio.max_tokens,
-            reasoning=cfg.lm_studio.reasoning,
         )
 
     def test_uses_client_as_context_manager(self, tmp_path: Path):

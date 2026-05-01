@@ -41,8 +41,7 @@ def _truncate(text: str) -> str:
 
 def _sanitize_filename(raw: str) -> str:
     """Keep only lowercase alphanum/hyphen/underscore; strip leading/trailing junk."""
-    lines = raw.strip().lower().splitlines()
-    name = lines[0].strip() if lines else ""
+    name = raw.strip().lower()
     name = re.sub(r"[^a-z0-9_\-]", "_", name)
     name = re.sub(r"_+", "_", name).strip("_")
     if not name:
@@ -84,7 +83,7 @@ class Pipeline:
         resp = self.client.complete_structured(prompt, schema)
         parsed = json.loads(resp.content)
         interactions = [StageInteraction(stage="summarize", step=1,
-            prompt=prompt, answer=resp.content, reasoning=resp.reasoning)]
+            prompt=prompt, answer=parsed.get("summary", ""), reasoning=parsed.get("reason", ""))]
         if self.verbose:
             if parsed["can_classify"]:
                 self._log_exchange("Stage 1 — Summarize", prompt, parsed["summary"])
@@ -167,11 +166,21 @@ class Pipeline:
             .replace("{{summary}}", summary)
             .replace("{{document_text}}", _truncate(text))
         )
-        resp = self.client.complete(prompt)
-        raw = resp.content.strip()
+        schema = {
+            "type": "object",
+            "properties": {
+                "reasoning": {"type": "string"},
+                "filename": {"type": "string"},
+            },
+            "required": ["reasoning", "filename"],
+            "additionalProperties": False,
+        }
+        resp = self.client.complete_structured(prompt, schema)
+        parsed = json.loads(resp.content)
+        raw = parsed["filename"]
         result = _sanitize_filename(raw)
         interactions = [StageInteraction(stage="choose_filename", step=1,
-            prompt=prompt, answer=raw, reasoning=resp.reasoning)]
+            prompt=prompt, answer=raw, reasoning=parsed.get("reasoning", ""))]
         if self.verbose:
             self._log_exchange("Stage 3 — Name file", prompt, raw)
         return result, interactions

@@ -116,7 +116,6 @@ def ping_lm_studio(ctx: click.Context) -> None:
         prompts_dir=cfg.prompts_dir,
         temperature=cfg.lm_studio.temperature,
         max_tokens=cfg.lm_studio.max_tokens,
-        reasoning=cfg.lm_studio.reasoning,
     )
 
     try:
@@ -149,7 +148,6 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
         prompts_dir=cfg.prompts_dir,
         temperature=cfg.lm_studio.temperature,
         max_tokens=cfg.lm_studio.max_tokens,
-        reasoning=cfg.lm_studio.reasoning,
     )
 
     try:
@@ -181,7 +179,7 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
             archive_root=cfg.archive,
         )
         label = "[dim](dry run)[/dim] " if cfg.dry_run else ""
-        console.print(f"\n[bold green]→[/bold green] {label}{dest}")
+        console.print(f"\n[bold green]->[/bold green] {label}{dest}")
         html_path = cfg.log_file.with_name(cfg.log_file.stem + "_report.html")
         console.print(f"[dim]Report: {html_path}[/dim]\n")
     except ClassificationError as exc:
