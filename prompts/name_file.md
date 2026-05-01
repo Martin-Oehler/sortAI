@@ -17,7 +17,9 @@ Rules for the file name:
 - Be concise but descriptive (3–6 words separated by underscores)
 - Do NOT include a file extension — it will be added automatically
 
-Reply with **only** the file name — nothing else.
+Respond with a JSON object with these fields:
+- `"reasoning"`: a short explanation of your naming decision
+- `"filename"`: the chosen file name (no extension, no path — just the name stem)
 
 ---
 

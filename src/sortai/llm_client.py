@@ -27,14 +27,12 @@ class LMStudioClient:
         prompts_dir: Path = Path("prompts"),
         temperature: float = 0.2,
         max_tokens: int = 2048,
-        reasoning: Optional[str] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         self.prompts_dir = Path(prompts_dir)
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.reasoning = reasoning
         self._openai = OpenAI(
             base_url=f"{self.base_url}/v1",
             api_key="lm-studio",
@@ -96,8 +94,6 @@ class LMStudioClient:
             "temperature": self.temperature,
             "max_output_tokens": self.max_tokens,
         }
-        if self.reasoning is not None:
-            payload["reasoning"] = self.reasoning
         if system:
             payload["system_prompt"] = system
 
