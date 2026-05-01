@@ -302,8 +302,8 @@ def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool) -> N
     queue_path = cfg.log_file.parent / "review_queue.json"
     review_store = ReviewStore(queue_path)
 
-    effective_port = port if port is not None else cfg.review.port
-    open_browser = (not no_browser) and cfg.review.auto_open_browser
+    effective_port = port if port is not None else cfg.dashboard.port
+    open_browser = (not no_browser) and cfg.dashboard.auto_open_browser
 
     console.print(
         f"[bold green]Dashboard[/bold green] starting at "

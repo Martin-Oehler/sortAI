@@ -182,8 +182,8 @@ class Watcher:
         from sortai.review_store import make_review_item
 
         staging_dir = (
-            self.cfg.review.staging_dir
-            if self.cfg.review.staging_dir
+            self.cfg.dashboard.staging_dir
+            if self.cfg.dashboard.staging_dir
             else self.cfg.inbox.parent / "_review"
         )
         staged = move_file(

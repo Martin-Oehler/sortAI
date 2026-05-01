@@ -18,7 +18,7 @@ class LMStudioConfig:
 
 
 @dataclass
-class ReviewConfig:
+class DashboardConfig:
     staging_dir: Optional[Path] = None   # default: inbox.parent / "_review"
     rejected_dir: Optional[Path] = None  # default: inbox.parent / "_rejected"
     port: int = 8765
@@ -36,7 +36,7 @@ class Config:
     folder_description_filename: str = "folder-description.md"
     subfolder_preview_count: int = 5
     lm_studio: LMStudioConfig = field(default_factory=LMStudioConfig)
-    review: ReviewConfig = field(default_factory=ReviewConfig)
+    dashboard: DashboardConfig = field(default_factory=DashboardConfig)
 
     @classmethod
     def load(cls, path: Path) -> "Config":
@@ -57,8 +57,8 @@ class Config:
             reasoning=lms_raw.get("reasoning"),
         )
 
-        rv_raw = raw.get("review", {})
-        review = ReviewConfig(
+        rv_raw = raw.get("dashboard", {})
+        dashboard = DashboardConfig(
             staging_dir=Path(rv_raw["staging_dir"]) if "staging_dir" in rv_raw else None,
             rejected_dir=Path(rv_raw["rejected_dir"]) if "rejected_dir" in rv_raw else None,
             port=rv_raw.get("port", 8765),
@@ -75,7 +75,7 @@ class Config:
             folder_description_filename=raw.get("folder_description_filename", "folder-description.md"),
             subfolder_preview_count=raw.get("subfolder_preview_count", 5),
             lm_studio=lms,
-            review=review,
+            dashboard=dashboard,
         )
         cfg._validate()
         return cfg

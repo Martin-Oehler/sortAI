@@ -43,7 +43,7 @@ max_tokens = 4096
 # Defaults to the automatically chosen setting for the model. Not all models support this.
 reasoning = "on"
 
-[review]
+[dashboard]
 # Port for the dashboard web server.
 port = 8765
 

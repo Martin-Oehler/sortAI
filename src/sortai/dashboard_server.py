@@ -128,8 +128,8 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
 
         from sortai.file_ops import move_file
         rejected_dir = (
-            _cfg.review.rejected_dir  # type: ignore[union-attr]
-            if _cfg.review.rejected_dir  # type: ignore[union-attr]
+            _cfg.dashboard.rejected_dir  # type: ignore[union-attr]
+            if _cfg.dashboard.rejected_dir  # type: ignore[union-attr]
             else _cfg.inbox.parent / "_rejected"  # type: ignore[union-attr]
         )
         src = Path(item.staging_path)
