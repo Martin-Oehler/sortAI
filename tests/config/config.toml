@@ -2,10 +2,10 @@
 # Copy this file to config/config.toml and adjust the values.
 
 # Folder to watch for incoming PDFs.
-inbox = "C:/Users/Martin/Downloads/sortai-inbox"
+inbox = "tests/fixtures/inbox"
 
 # Root of your existing document archive.
-archive = "C:/Users/Martin/Documents/archive"
+archive = "tests/fixtures/archive"
 
 # Directory containing the prompt markdown files (relative to project root).
 prompts_dir = "prompts"
@@ -31,17 +31,17 @@ subfolder_preview_count = 5
 base_url = "http://localhost:1234"
 
 # Exact model identifier shown in LM Studio (e.g. "lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF").
-model = "your-model-id-here"
+model = "google/gemma-4-e4b"
 
 # Sampling temperature (lower = more deterministic).
 temperature = 0.2
 
 # Maximum tokens to generate per completion.
-max_tokens = 2048
+max_tokens = 4096
 
 # Reasoning effort: "off", "low", "medium", "high", or "on".
 # Defaults to the automatically chosen setting for the model. Not all models support this.
-# reasoning = "on"
+reasoning = "on"
 
 [dashboard]
 # Port for the dashboard web server.
@@ -51,7 +51,7 @@ port = 8765
 auto_open_browser = true
 
 # Where to move files while awaiting review (default: inbox parent / "_review").
-# staging_dir = "/path/to/_review"
+staging_dir = "tests/fixtures/review"
 
 # Where to move rejected files (default: inbox parent / "_rejected").
-# rejected_dir = "/path/to/_rejected"
+rejected_dir = "tests/fixtures/rejected"
