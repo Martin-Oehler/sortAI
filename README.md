@@ -106,9 +106,9 @@ sortai validate sample my_test_set.json -n 20
 sortai validate run my_test_set.json
 ```
 
-## Review dashboard
+## Interactive dashboard
 
-The review dashboard lets you inspect LLM decisions before files are moved. It is a persistent local web server that can run at any time, independently of the watcher.
+The interactive dashboard shows a history log of past document classifications. In review mode, documents are added to the staging area in which LLM decisions can be inspected before files are moved. It is a persistent local web server that can run at any time, independently of the watcher.
 
 ### Workflow
 
@@ -139,16 +139,12 @@ The review dashboard lets you inspect LLM decisions before files are moved. It i
 ### Dashboard configuration
 
 ```toml
-[review]
+[dashboard]
 port = 8765
 auto_open_browser = true
 # staging_dir  = "/path/to/_review"    # default: inbox parent / "_review"
 # rejected_dir = "/path/to/_rejected"  # default: inbox parent / "_rejected"
 ```
-
-### Normal mode is unchanged
-
-Running `sortai watch` **without** `--review` behaves exactly as before — files are auto-moved and logged immediately.
 
 ## Validation
 
