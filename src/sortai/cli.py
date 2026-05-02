@@ -360,6 +360,8 @@ def validate_run(ctx: click.Context, test_set_file: Path, verbose: bool) -> None
     Files are never moved — the pipeline always runs in dry-run mode.
     """
     import json as _json
+    import subprocess as _sp
+    from datetime import datetime as _dt
 
     from sortai.validator import load_test_set, print_results_table, print_score, run_validation
 
@@ -386,8 +388,43 @@ def validate_run(ctx: click.Context, test_set_file: Path, verbose: bool) -> None
     print_results_table(results, verbose=verbose, console=console)
     print_score(results, console=console)
 
-    results_path = test_set_file.parent / f"{test_set_file.stem}_results.json"
+    timestamp = _dt.now().strftime("%Y%m%d_%H%M%S")
+    results_path = test_set_file.parent / f"{test_set_file.stem}_results_{timestamp}.json"
     results_path.write_text(
         _json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     console.print(f"[dim]Results written:[/dim] {results_path}")
+
+    total = len(results)
+    exact = sum(1 for r in results if r["exact_match"])
+    partial = sum(1 for r in results if r["prefix_match"])
+    errors = sum(1 for r in results if r["error"])
+
+    try:
+        git_commit = _sp.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except Exception:
+        git_commit = "unknown"
+
+    times = [r["elapsed_seconds"] for r in results if not r["error"]]
+
+    history_path = test_set_file.parent / f"{test_set_file.stem}_history.json"
+    history = _json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else []
+    history.append({
+        "timestamp": _dt.now().isoformat(),
+        "git_commit": git_commit,
+        "total": total,
+        "exact": exact,
+        "partial": partial,
+        "errors": errors,
+        "exact_pct": round(exact / total, 4) if total else 0,
+        "partial_pct": round(partial / total, 4) if total else 0,
+        "time_min_s": round(min(times), 2) if times else None,
+        "time_max_s": round(max(times), 2) if times else None,
+        "time_avg_s": round(sum(times) / len(times), 2) if times else None,
+        "results_file": results_path.name,
+    })
+    history_path.write_text(_json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")
+    console.print(f"[dim]History updated:[/dim]  {history_path}")
