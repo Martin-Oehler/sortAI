@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sortai.config import Config, LMStudioConfig
+from sortai.config import Config, DashboardConfig, LMStudioConfig
 from sortai.validator import (
     SampleEntry,
     SampleSet,
@@ -43,6 +43,7 @@ def make_config(archive: Path) -> Config:
     cfg.dry_run = False
     cfg.max_navigate_depth = 10
     cfg.lm_studio = LMStudioConfig(model="test-model")
+    cfg.dashboard = DashboardConfig()
     return cfg
 
 
