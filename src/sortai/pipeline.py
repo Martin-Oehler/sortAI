@@ -58,9 +58,11 @@ class Pipeline:
         self.verbose = verbose
         self._console = Console()
 
-    def _log_exchange(self, stage: str, prompt: str, response: str) -> None:
+    def _log_exchange(self, stage: str, prompt: str, response: str, reasoning: str = "") -> None:
         self._console.print(Rule(f"[bold cyan]{stage}[/bold cyan]"))
         self._console.print(Panel(Markdown(prompt), title="[dim]prompt[/dim]", border_style="dim"))
+        if reasoning:
+            self._console.print(Panel(reasoning.strip(), title="[dim]reasoning[/dim]", border_style="yellow"))
         self._console.print(Panel(response.strip(), title="[dim]response[/dim]", border_style="green"))
 
     def summarize(self, text: str) -> tuple[str, list[StageInteraction]]:
@@ -86,7 +88,8 @@ class Pipeline:
             prompt=prompt, answer=parsed.get("summary", ""), reasoning=parsed.get("reason", ""))]
         if self.verbose:
             if parsed["can_classify"]:
-                self._log_exchange("Stage 1 — Summarize", prompt, parsed["summary"])
+                self._log_exchange("Stage 1 — Summarize", prompt, parsed["summary"],
+                    reasoning=parsed.get("reason", ""))
             else:
                 self._log_exchange("Stage 1 — Summarize", prompt,
                     f"[CANNOT CLASSIFY] {parsed.get('reason', '')}")
@@ -144,7 +147,8 @@ class Pipeline:
             interactions.append(StageInteraction(stage="navigate", step=step,
                 prompt=prompt, answer=choice, reasoning=parsed.get("reasoning", "")))
             if self.verbose:
-                self._log_exchange(f"Stage 2 — Navigate (step {step})", prompt, choice)
+                self._log_exchange(f"Stage 2 — Navigate (step {step})", prompt, choice,
+                    reasoning=parsed.get("reasoning", ""))
 
             if choice == ".":
                 break
@@ -182,7 +186,8 @@ class Pipeline:
         interactions = [StageInteraction(stage="choose_filename", step=1,
             prompt=prompt, answer=raw, reasoning=parsed.get("reasoning", ""))]
         if self.verbose:
-            self._log_exchange("Stage 3 — Name file", prompt, raw)
+            self._log_exchange("Stage 3 — Name file", prompt, raw,
+                reasoning=parsed.get("reasoning", ""))
         return result, interactions
 
     def run(self, pdf_path: Path) -> tuple[Path, str, str, list[StageInteraction]]:
