@@ -34,6 +34,12 @@ def list_children_with_info(
         child_path = path / child_name
         subfolders = list_children(child_path)[:subfolder_preview_count]
         desc_path = child_path / description_filename
-        description = desc_path.read_text(encoding="utf-8").strip() if desc_path.is_file() else None
+        if desc_path.is_file():
+            try:
+                description = desc_path.read_text(encoding="utf-8").strip()
+            except UnicodeDecodeError:
+                description = desc_path.read_text(encoding="cp1252").strip()
+        else:
+            description = None
         infos.append(FolderInfo(name=child_name, subfolders=subfolders, description=description))
     return infos
