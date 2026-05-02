@@ -408,6 +408,8 @@ def validate_run(ctx: click.Context, test_set_file: Path, verbose: bool) -> None
     except Exception:
         git_commit = "unknown"
 
+    times = [r["elapsed_seconds"] for r in results if not r["error"]]
+
     history_path = test_set_file.parent / f"{test_set_file.stem}_history.json"
     history = _json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else []
     history.append({
@@ -419,6 +421,9 @@ def validate_run(ctx: click.Context, test_set_file: Path, verbose: bool) -> None
         "errors": errors,
         "exact_pct": round(exact / total, 4) if total else 0,
         "partial_pct": round(partial / total, 4) if total else 0,
+        "time_min_s": round(min(times), 2) if times else None,
+        "time_max_s": round(max(times), 2) if times else None,
+        "time_avg_s": round(sum(times) / len(times), 2) if times else None,
         "results_file": results_path.name,
     })
     history_path.write_text(_json.dumps(history, indent=2, ensure_ascii=False), encoding="utf-8")

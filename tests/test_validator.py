@@ -348,6 +348,7 @@ def _make_results(
             error=error,
             summary="A document summary",
             interactions=[],
+            elapsed_seconds=1.5,
         )
     ]
 

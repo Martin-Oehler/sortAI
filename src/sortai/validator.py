@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import random
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
@@ -37,6 +38,7 @@ class ValidationResult(TypedDict):
     error: str              # "" if success
     summary: str            # LLM summary, "" on error
     interactions: list      # list[StageInteraction]; [] on error
+    elapsed_seconds: float  # wall-clock seconds for pipeline.run(); 0.0 on error
 
 
 # Aliases for backwards-compatibility in tests and user-facing code.
@@ -116,7 +118,9 @@ def _run_single(
 ) -> ValidationResult:
     """Run the pipeline on one entry; catch all exceptions into an error result."""
     try:
+        t0 = time.perf_counter()
         target_folder, _filename, summary, interactions = pipeline.run(Path(entry["path"]))
+        elapsed = time.perf_counter() - t0
         exact, prefix = _compare_folders(target_folder, entry["ground_truth_folder"], archive_root)
         try:
             predicted_rel = target_folder.relative_to(archive_root).as_posix()
@@ -131,6 +135,7 @@ def _run_single(
             error="",
             summary=summary,
             interactions=interactions,
+            elapsed_seconds=elapsed,
         )
     except Exception as exc:  # noqa: BLE001
         return ValidationResult(
@@ -142,6 +147,7 @@ def _run_single(
             error=str(exc),
             summary="",
             interactions=[],
+            elapsed_seconds=0.0,
         )
 
 
@@ -200,6 +206,7 @@ def print_results_table(
     table.add_column("Predicted")
     table.add_column("Match", justify="center")
     table.add_column("Partial", justify="center")
+    table.add_column("Time", justify="right")
     if verbose:
         table.add_column("Summary")
 
@@ -223,7 +230,11 @@ def print_results_table(
             match_cell = "[red]N[/red]"
             partial_cell = "[red]N[/red]"
 
-        row = [str(i), filename, r["ground_truth_folder"], predicted_cell, match_cell, partial_cell]
+        if r["error"]:
+            time_cell = "[dim]0.0s[/dim]"
+        else:
+            time_cell = f"[dim]{r['elapsed_seconds']:.1f}s[/dim]"
+        row = [str(i), filename, r["ground_truth_folder"], predicted_cell, match_cell, partial_cell, time_cell]
         if verbose:
             s = r["summary"]
             row.append(s[:80] + ("..." if len(s) > 80 else ""))
@@ -255,3 +266,11 @@ def print_score(
         f"  |  {partial}/{total} ({partial / total:.1%}) partial"
         f"  |  {errors} error(s)"
     )
+
+    times = [r["elapsed_seconds"] for r in results if not r["error"]]
+    if times:
+        console.print(
+            f"[bold]Time:[/bold]     {min(times):.1f}s min"
+            f"  |  {sum(times) / len(times):.1f}s avg"
+            f"  |  {max(times):.1f}s max"
+        )
