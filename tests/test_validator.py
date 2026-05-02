@@ -567,12 +567,21 @@ class TestValidateCLI:
 
         assert cli_result.exit_code == 0, cli_result.output
 
-        results_path = tmp_path / "val_results.json"
-        assert results_path.exists(), "results JSON was not written"
-        data = json.loads(results_path.read_text(encoding="utf-8"))
+        results_files = list(tmp_path.glob("val_results_*.json"))
+        assert len(results_files) == 1, "expected one timestamped results JSON"
+        data = json.loads(results_files[0].read_text(encoding="utf-8"))
         assert isinstance(data, list)
         assert len(data) == 1
         entry = data[0]
         assert entry["ground_truth_folder"] == "bank"
         assert isinstance(entry["interactions"], list)
         assert entry["interactions"][0]["stage"] == "summarize"
+
+        history_path = tmp_path / "val_history.json"
+        assert history_path.exists(), "history JSON was not written"
+        history = json.loads(history_path.read_text(encoding="utf-8"))
+        assert len(history) == 1
+        assert "timestamp" in history[0]
+        assert "git_commit" in history[0]
+        assert history[0]["total"] == 1
+        assert history[0]["results_file"] == results_files[0].name
