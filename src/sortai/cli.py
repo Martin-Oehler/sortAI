@@ -179,19 +179,21 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
                 src=pdf_file.resolve(),
                 dest_dir=staging_dir,
                 new_name=pdf_file.name,
-                dry_run=False,
+                dry_run=cfg.dry_run,
             )
-            proposed_folder = target_folder.relative_to(cfg.archive).as_posix()
-            item = make_review_item(
-                original_filename=pdf_file.name,
-                staging_path=staged,
-                proposed_folder=proposed_folder,
-                proposed_filename=filename,
-                summary=summary,
-                interactions=interactions,
-            )
-            review_store.add(item)
-            console.print(f"[yellow]⚠ Staged for review:[/yellow] {pdf_file.name} → [dim]{staged}[/dim]")
+            if not cfg.dry_run:
+                proposed_folder = target_folder.relative_to(cfg.archive).as_posix()
+                item = make_review_item(
+                    original_filename=pdf_file.name,
+                    staging_path=staged,
+                    proposed_folder=proposed_folder,
+                    proposed_filename=filename,
+                    summary=summary,
+                    interactions=interactions,
+                )
+                review_store.add(item)
+            label = "[dim](dry run)[/dim] " if cfg.dry_run else ""
+            console.print(f"[yellow]⚠ Staged for review:[/yellow] {label}{pdf_file.name} → [dim]{staged}[/dim]")
         else:
             dest = move_file(
                 src=pdf_file.resolve(),
