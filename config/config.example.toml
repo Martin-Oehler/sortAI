@@ -16,6 +16,10 @@ log_file = "logs/sortai.jsonl"
 # Set to true to simulate all actions without moving any files.
 dry_run = false
 
+# Set to true to stage all processed files for human review instead of auto-moving them.
+# Use 'sortai dashboard' to approve or reject staged files.
+review_mode = false
+
 # Maximum folder depth the navigation loop will traverse before stopping.
 max_navigate_depth = 10
 
