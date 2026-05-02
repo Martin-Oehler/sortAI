@@ -31,6 +31,7 @@ class Config:
     prompts_dir: Path = field(default_factory=lambda: Path("prompts"))
     log_file: Path = field(default_factory=lambda: Path("logs/sortai.jsonl"))
     dry_run: bool = False
+    review_mode: bool = False
     max_navigate_depth: int = 10
     folder_description_filename: str = "folder-description.md"
     subfolder_preview_count: int = 5
@@ -69,6 +70,7 @@ class Config:
             prompts_dir=Path(raw.get("prompts_dir", "prompts")),
             log_file=Path(raw.get("log_file", "logs/sortai.jsonl")),
             dry_run=raw.get("dry_run", False),
+            review_mode=raw.get("review_mode", False),
             max_navigate_depth=raw.get("max_navigate_depth", 10),
             folder_description_filename=raw.get("folder_description_filename", "folder-description.md"),
             subfolder_preview_count=raw.get("subfolder_preview_count", 5),

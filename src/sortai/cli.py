@@ -14,13 +14,15 @@ console = Console()
 DEFAULT_CONFIG = Path("config/config.toml")
 
 
-def _load_config(config_path: Path, dry_run_override: bool):
-    """Load config, applying CLI dry-run override if set."""
+def _load_config(config_path: Path, dry_run_override: bool, review_mode_override: bool = False):
+    """Load config, applying CLI overrides if set."""
     from sortai.config import Config
 
     cfg = Config.load(config_path)
     if dry_run_override:
         cfg.dry_run = True
+    if review_mode_override:
+        cfg.review_mode = True
     return cfg
 
 
@@ -34,19 +36,21 @@ def _load_config(config_path: Path, dry_run_override: bool):
     help="Path to config.toml",
 )
 @click.option("--dry-run", is_flag=True, default=False, help="Simulate actions without moving files.")
+@click.option("--review", "review_mode", is_flag=True, default=False, help="Stage files for human review instead of auto-moving.")
 @click.pass_context
-def main(ctx: click.Context, config_path: Path, dry_run: bool) -> None:
+def main(ctx: click.Context, config_path: Path, dry_run: bool, review_mode: bool) -> None:
     """sortAI — sort documents into an archive using an LLM."""
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = config_path
     ctx.obj["dry_run"] = dry_run
+    ctx.obj["review_mode"] = review_mode
 
 
 @main.command("config")
 @click.pass_context
 def show_config(ctx: click.Context) -> None:
     """Show the current configuration."""
-    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
 
     table = Table(title="sortAI configuration", show_header=False)
     table.add_column("Key", style="bold cyan")
@@ -57,6 +61,7 @@ def show_config(ctx: click.Context) -> None:
     table.add_row("prompts_dir", str(cfg.prompts_dir))
     table.add_row("log_file", str(cfg.log_file))
     table.add_row("dry_run", str(cfg.dry_run))
+    table.add_row("review_mode", str(cfg.review_mode))
     table.add_row("max_navigate_depth", str(cfg.max_navigate_depth))
     table.add_row("lm_studio.base_url", cfg.lm_studio.base_url)
     table.add_row("lm_studio.model", cfg.lm_studio.model)
@@ -97,7 +102,7 @@ def _build_rich_tree(branch: Tree, path: Path) -> None:
 @click.pass_context
 def show_tree(ctx: click.Context) -> None:
     """Pretty-print the document archive folder tree."""
-    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     root = Tree(f"[bold]{cfg.archive}[/bold]")
     _build_rich_tree(root, cfg.archive)
     console.print(root)
@@ -107,7 +112,7 @@ def show_tree(ctx: click.Context) -> None:
 @click.pass_context
 def ping_lm_studio(ctx: click.Context) -> None:
     """Test LM Studio connection: load model, send hello, print response, unload."""
-    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     from sortai.llm_client import LMStudioClient
 
     client = LMStudioClient(
@@ -137,7 +142,7 @@ def ping_lm_studio(ctx: click.Context) -> None:
 @click.pass_context
 def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -> None:
     """Run the full LLM pipeline on a single PDF (prints proposed destination)."""
-    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     from sortai.file_ops import log_decision, log_error, move_file
     from sortai.llm_client import LMStudioClient
     from sortai.pipeline import ClassificationError, Pipeline
@@ -158,30 +163,54 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
         client.load_model()
         pipeline = Pipeline(cfg, client, verbose=verbose)
         console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")
-        target_folder, filename, summary, _ = pipeline.run(pdf_file)
+        target_folder, filename, summary, interactions = pipeline.run(pdf_file)
         if warm:
             console.print("[cyan]Model kept loaded (--warm).[/cyan]")
         else:
             client.unload_model()
             console.print("[cyan]Model unloaded.[/cyan]")
-        dest = move_file(
-            src=pdf_file.resolve(),
-            dest_dir=target_folder,
-            new_name=filename,
-            dry_run=cfg.dry_run,
-        )
-        log_decision(
-            src=pdf_file.resolve(),
-            dest=dest,
-            summary=summary,
-            dry_run=cfg.dry_run,
-            log_path=cfg.log_file,
-            archive_root=cfg.archive,
-        )
-        label = "[dim](dry run)[/dim] " if cfg.dry_run else ""
-        console.print(f"\n[bold green]->[/bold green] {label}{dest}")
-        html_path = cfg.log_file.with_name(cfg.log_file.stem + "_report.html")
-        console.print(f"[dim]Report: {html_path}[/dim]\n")
+        if cfg.review_mode:
+            from sortai.review_store import ReviewStore, make_review_item
+
+            staging_dir = cfg.dashboard.staging_dir or cfg.inbox.parent / "_review"
+            queue_path = cfg.log_file.parent / "review_queue.json"
+            review_store = ReviewStore(queue_path)
+            staged = move_file(
+                src=pdf_file.resolve(),
+                dest_dir=staging_dir,
+                new_name=pdf_file.name,
+                dry_run=False,
+            )
+            proposed_folder = target_folder.relative_to(cfg.archive).as_posix()
+            item = make_review_item(
+                original_filename=pdf_file.name,
+                staging_path=staged,
+                proposed_folder=proposed_folder,
+                proposed_filename=filename,
+                summary=summary,
+                interactions=interactions,
+            )
+            review_store.add(item)
+            console.print(f"[yellow]⚠ Staged for review:[/yellow] {pdf_file.name} → [dim]{staged}[/dim]")
+        else:
+            dest = move_file(
+                src=pdf_file.resolve(),
+                dest_dir=target_folder,
+                new_name=filename,
+                dry_run=cfg.dry_run,
+            )
+            log_decision(
+                src=pdf_file.resolve(),
+                dest=dest,
+                summary=summary,
+                dry_run=cfg.dry_run,
+                log_path=cfg.log_file,
+                archive_root=cfg.archive,
+            )
+            label = "[dim](dry run)[/dim] " if cfg.dry_run else ""
+            console.print(f"\n[bold green]->[/bold green] {label}{dest}")
+            html_path = cfg.log_file.with_name(cfg.log_file.stem + "_report.html")
+            console.print(f"[dim]Report: {html_path}[/dim]\n")
     except ClassificationError as exc:
         console.print(f"\n[yellow]Cannot classify:[/yellow] {exc}")
         log_error(
@@ -203,7 +232,7 @@ def show_log(ctx: click.Context, count: int) -> None:
     """Show recent sort decisions from the log."""
     from sortai.file_ops import dest_label, load_jsonl_entries
 
-    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     log_path = cfg.log_file
 
     if not log_path.exists():
@@ -249,7 +278,7 @@ def generate_report(ctx: click.Context) -> None:
     """Regenerate the HTML audit report from the existing JSONL log."""
     from sortai.file_ops import render_html_report
 
-    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     log_path = cfg.log_file
 
     if not log_path.exists():
@@ -271,15 +300,16 @@ def watch_inbox(ctx: click.Context, once: bool, verbose: bool, review_mode: bool
     from sortai.review_store import ReviewStore
     from sortai.watcher import Watcher
 
-    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
 
+    effective_review = review_mode or cfg.review_mode
     review_store = None
-    if review_mode:
+    if effective_review:
         queue_path = cfg.log_file.parent / "review_queue.json"
         review_store = ReviewStore(queue_path)
         console.print(f"[yellow]Review mode:[/yellow] files will be staged for approval. Queue: {queue_path}")
 
-    watcher = Watcher(cfg, verbose=verbose, review_mode=review_mode, review_store=review_store)
+    watcher = Watcher(cfg, verbose=verbose, review_mode=effective_review, review_store=review_store)
 
     if once:
         watcher.run_once()
@@ -296,7 +326,7 @@ def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool) -> N
     from sortai.dashboard_server import run as run_dashboard
     from sortai.review_store import ReviewStore
 
-    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     queue_path = cfg.log_file.parent / "review_queue.json"
     review_store = ReviewStore(queue_path)
 
@@ -336,7 +366,7 @@ def validate_sample(ctx: click.Context, output: Path, count: int) -> None:
     """
     from sortai.validator import sample_pdfs, write_test_set
 
-    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     console.print(f"[cyan]Scanning archive:[/cyan] {cfg.archive}")
     try:
         test_set = sample_pdfs(cfg.archive, count)
@@ -365,7 +395,7 @@ def validate_run(ctx: click.Context, test_set_file: Path, verbose: bool) -> None
 
     from sortai.validator import load_test_set, print_results_table, print_score, run_validation
 
-    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"])
+    cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     test_set = load_test_set(test_set_file)
 
     from pathlib import Path as _Path
