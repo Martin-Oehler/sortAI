@@ -30,7 +30,7 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         global _loop
-        _loop = asyncio.get_event_loop()
+        _loop = asyncio.get_running_loop()
         observer = _start_file_watcher()
         try:
             yield
@@ -151,6 +151,8 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
                         break
                     try:
                         event = await asyncio.wait_for(q.get(), timeout=20)
+                        if event is None:  # shutdown sentinel
+                            break
                         yield f"event: {event}\ndata: {{}}\n\n"
                     except asyncio.TimeoutError:
                         yield ": keepalive\n\n"
@@ -226,7 +228,22 @@ def run(cfg: "Config", store: "ReviewStore", port: int, open_browser: bool) -> N
             webbrowser.open(f"http://localhost:{port}")
         threading.Thread(target=_open, daemon=True).start()
 
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+
+    _original_handle_exit = server.handle_exit
+
+    def _handle_exit(sig, frame):
+        if _loop is not None:
+            async def _close_sse():
+                for q in list(_sse_clients):
+                    await q.put(None)
+            asyncio.run_coroutine_threadsafe(_close_sse(), _loop)
+        _original_handle_exit(sig, frame)
+
+    server.handle_exit = _handle_exit
+
     try:
-        uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+        server.run()
     except KeyboardInterrupt:
         pass
