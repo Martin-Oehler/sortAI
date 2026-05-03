@@ -189,20 +189,22 @@ class Watcher:
             src=pdf_path.resolve(),
             dest_dir=staging_dir,
             new_name=pdf_path.name,
-            dry_run=False,
+            dry_run=self.cfg.dry_run,
         )
         proposed_folder = target_folder.relative_to(self.cfg.archive).as_posix()
-        item = make_review_item(
-            original_filename=pdf_path.name,
-            staging_path=staged,
-            proposed_folder=proposed_folder,
-            proposed_filename=filename,
-            summary=summary,
-            interactions=interactions,
-        )
-        self.review_store.add(item)  # type: ignore[union-attr]
+        if not self.cfg.dry_run:
+            item = make_review_item(
+                original_filename=pdf_path.name,
+                staging_path=staged,
+                proposed_folder=proposed_folder,
+                proposed_filename=filename,
+                summary=summary,
+                interactions=interactions,
+            )
+            self.review_store.add(item)  # type: ignore[union-attr]
+        label = "[dim](dry run)[/dim] " if self.cfg.dry_run else ""
         console.print(
-            f"[yellow]⚠ Staged for review:[/yellow] {pdf_path.name} "
+            f"[yellow]⚠ Staged for review:[/yellow] {label}{pdf_path.name} "
             f"→ [dim]{staged}[/dim]"
         )
 

@@ -53,9 +53,11 @@ cp config/config.example.toml config/config.toml
 `config/config.toml` (copy from `config/config.example.toml`):
 
 ```toml
-inbox    = "/path/to/inbox"      # folder to watch for incoming PDFs
-archive  = "/path/to/archive"    # root of your existing document archive
-log_file = "logs/sortai.jsonl"
+inbox       = "/path/to/inbox"      # folder to watch for incoming PDFs
+archive     = "/path/to/archive"    # root of your existing document archive
+log_file    = "logs/sortai.jsonl"
+dry_run     = false                 # simulate without moving files
+review_mode = false                 # stage all files for human review instead of auto-moving
 
 [lm_studio]
 base_url    = "http://localhost:1234"
@@ -67,7 +69,7 @@ max_tokens  = 2048
 ## CLI reference
 
 ```
-sortai [--config FILE] [--dry-run] COMMAND
+sortai [--config FILE] [--dry-run] [--review] COMMAND
 ```
 
 | Command | Description |
@@ -77,7 +79,7 @@ sortai [--config FILE] [--dry-run] COMMAND
 | `sortai tree` | Print the archive folder tree |
 | `sortai ping` | Test LM Studio connection (load, hello, unload) |
 | `sortai process PDF_FILE [--verbose] [--warm]` | Run the full sort pipeline on a single PDF |
-| `sortai watch [--once] [--verbose] [--review]` | Watch inbox and auto-process new PDFs |
+| `sortai watch [--once] [--verbose]` | Watch inbox and auto-process new PDFs |
 | `sortai dashboard [--port PORT] [--no-browser]` | Start the review dashboard web server |
 | `sortai log [-n N]` | Show recent sort decisions |
 | `sortai report` | Regenerate the HTML audit report |
@@ -98,6 +100,9 @@ sortai ping
 
 # Simulate a sort without moving files
 sortai --dry-run process ~/Downloads/invoice.pdf
+
+# Stage a single file for review instead of auto-moving
+sortai --review process ~/Downloads/invoice.pdf
 
 # Create a validation test set (20 randomly sampled PDFs from the archive)
 sortai validate sample my_test_set.json -n 20
@@ -121,8 +126,14 @@ The interactive dashboard shows a history log of past document classifications. 
 2. **Watch in review mode** (in another terminal):
    ```bash
    sortai watch --review
+   # or set review_mode = true in config.toml and just run: sortai watch
    ```
    Instead of moving files directly, the watcher places each incoming PDF in a `_review/` staging folder and adds an entry to `logs/review_queue.json`.
+
+   The `--review` flag is also available globally, so you can use it with `process` to stage a single file:
+   ```bash
+   sortai --review process ~/Downloads/invoice.pdf
+   ```
 
 3. **Review in the browser**: staged items appear in the "Needs Review" section at the top. Click a row to preview the PDF. Press **Accept ✓** (or `Y`) to move the file to the proposed archive location, or **Reject ✗** (or `N`) to move it to `_rejected/`.
 
