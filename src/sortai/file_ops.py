@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime
 from html import escape as _esc
 from pathlib import Path
@@ -29,7 +30,7 @@ def move_file(src: Path, dest_dir: Path, new_name: str, dry_run: bool) -> Path:
         counter += 1
     if not dry_run:
         dest_dir.mkdir(parents=True, exist_ok=True)
-        src.rename(dest)
+        shutil.move(str(src), dest)
     return dest
 
 
