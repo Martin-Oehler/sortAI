@@ -61,13 +61,13 @@ def sample_pdfs(archive: Path, n: int) -> SampleSet:
         rel = pdf.parent.relative_to(archive)
         entries.append(
             TestEntry(
-                path=str(pdf.resolve()),
+                path=pdf.resolve().as_posix(),
                 ground_truth_folder=rel.as_posix(),
             )
         )
 
     return SampleSet(
-        archive_root=str(archive.resolve()),
+        archive_root=archive.resolve().as_posix(),
         created_at=datetime.now().isoformat(),
         n=len(entries),
         entries=entries,
