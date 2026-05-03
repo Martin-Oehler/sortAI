@@ -69,6 +69,7 @@ def show_config(ctx: click.Context) -> None:
     table.add_row("lm_studio.model", cfg.lm_studio.model)
     table.add_row("lm_studio.temperature", str(cfg.lm_studio.temperature))
     table.add_row("lm_studio.max_tokens", str(cfg.lm_studio.max_tokens))
+    table.add_row("lm_studio.context_length", str(cfg.lm_studio.context_length))
     table.add_row("dashboard.staging_dir", str(cfg.dashboard.staging_dir))
     table.add_row("dashboard.rejected_dir", str(cfg.dashboard.rejected_dir))
     table.add_row("dashboard.port", str(cfg.dashboard.port))
@@ -127,6 +128,7 @@ def ping_lm_studio(ctx: click.Context) -> None:
         prompts_dir=cfg.prompts_dir,
         temperature=cfg.lm_studio.temperature,
         max_tokens=cfg.lm_studio.max_tokens,
+        context_length=cfg.lm_studio.context_length,
     )
 
     try:
@@ -159,6 +161,7 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
         prompts_dir=cfg.prompts_dir,
         temperature=cfg.lm_studio.temperature,
         max_tokens=cfg.lm_studio.max_tokens,
+        context_length=cfg.lm_studio.context_length,
     )
 
     try:

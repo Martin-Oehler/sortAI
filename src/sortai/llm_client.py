@@ -27,12 +27,14 @@ class LMStudioClient:
         prompts_dir: Path = Path("prompts"),
         temperature: float = 0.2,
         max_tokens: int = 2048,
+        context_length: Optional[int] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         self.prompts_dir = Path(prompts_dir)
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.context_length = context_length
         self._openai = OpenAI(
             base_url=f"{self.base_url}/v1",
             api_key="lm-studio",
@@ -43,14 +45,20 @@ class LMStudioClient:
     # ------------------------------------------------------------------
 
     def is_model_loaded(self) -> bool:
-        """Return True if the model is already loaded in LM Studio."""
-        models = self._openai.models.list()
-        return any(m.id == self.model_name for m in models.data)
+        """Return True if the model has at least one loaded instance in LM Studio."""
+        data = self._get_v1("models")
+        for model in data.get("models", []):
+            if model.get("key") == self.model_name and model.get("loaded_instances"):
+                return True
+        return False
 
     def load_model(self) -> None:
         """POST /api/v1/models/load — no-op if the model is already loaded."""
         if not self.is_model_loaded():
-            self._post_v1("models/load", {"model": self.model_name}, timeout=300)
+            payload: dict = {"model": self.model_name}
+            if self.context_length is not None:
+                payload["context_length"] = self.context_length
+            self._post_v1("models/load", payload, timeout=300)
 
     def unload_model(self) -> None:
         """POST /api/v1/models/unload to release the model from GPU memory."""
@@ -153,6 +161,25 @@ class LMStudioClient:
             body = exc.read().decode(errors="replace")
             raise RuntimeError(
                 f"LM Studio API error {exc.code} on POST /{api_path}: {body}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"Cannot reach LM Studio at {self.base_url}.\n"
+                "Make sure the local server is running:\n"
+                "  1. Open LM Studio and click the Developer tab in the left sidebar.\n"
+                "  2. Click the toggle next to 'Status: Stopped' to start the server."
+            ) from exc
+
+    def _get_v1(self, endpoint: str, timeout: int = 30) -> dict:
+        url = f"{self.base_url}/api/v1/{endpoint}"
+        req = urllib.request.Request(url, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode(errors="replace")
+            raise RuntimeError(
+                f"LM Studio API error {exc.code} on GET /api/v1/{endpoint}: {body}"
             ) from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(

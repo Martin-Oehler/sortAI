@@ -49,12 +49,17 @@ def _fake_urlopen_response(body: bytes = b"{}"):
 class TestPostV0:
     def test_load_model_posts_correct_url_and_payload(self, tmp_path: Path) -> None:
         client = _make_client(tmp_path)
-        mock_resp = _fake_urlopen_response(b"{}")
+        # First call: GET /api/v1/models (is_model_loaded check) → model not present
+        # Second call: POST /api/v1/models/load
+        get_resp = _fake_urlopen_response(b'{"models": []}')
+        post_resp = _fake_urlopen_response(b"{}")
 
-        with patch("sortai.llm_client.urllib.request.urlopen", return_value=mock_resp) as mock_open:
+        with patch(
+            "sortai.llm_client.urllib.request.urlopen", side_effect=[get_resp, post_resp]
+        ) as mock_open:
             client.load_model()
 
-        assert mock_open.call_count == 1
+        assert mock_open.call_count == 2
         req = mock_open.call_args[0][0]
         assert req.full_url == f"{BASE_URL}/api/v1/models/load"
         assert req.get_method() == "POST"
@@ -96,14 +101,18 @@ class TestPostV0:
         client = _make_client(tmp_path)
 
         http_error = urllib.error.HTTPError(
-            url=f"{BASE_URL}/api/v0/models/load",
+            url=f"{BASE_URL}/api/v1/models/load",
             code=503,
             msg="Service Unavailable",
             hdrs=None,  # type: ignore[arg-type]
             fp=BytesIO(b"no model loaded"),
         )
+        # GET /api/v1/models succeeds (model not loaded); POST /api/v1/models/load fails
+        get_resp = _fake_urlopen_response(b'{"models": []}')
 
-        with patch("sortai.llm_client.urllib.request.urlopen", side_effect=http_error):
+        with patch(
+            "sortai.llm_client.urllib.request.urlopen", side_effect=[get_resp, http_error]
+        ):
             with pytest.raises(RuntimeError) as exc_info:
                 client.load_model()
 
