@@ -208,6 +208,7 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
                 dry_run=cfg.dry_run,
                 log_path=cfg.log_file,
                 archive_root=cfg.archive,
+                interactions=interactions,
             )
             label = "[dim](dry run)[/dim] " if cfg.dry_run else ""
             console.print(f"\n[bold green]->[/bold green] {label}{dest}")

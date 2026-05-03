@@ -763,6 +763,7 @@ class TestProcess:
             dry_run=False,
             log_path=cfg.log_file,
             archive_root=cfg.archive,
+            interactions=[],
         )
 
     def test_respects_dry_run_true(self, tmp_path: Path):

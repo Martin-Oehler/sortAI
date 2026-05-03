@@ -156,6 +156,7 @@ class Watcher:
                     dry_run=self.cfg.dry_run,
                     log_path=self.cfg.log_file,
                     archive_root=self.cfg.archive,
+                    interactions=interactions,
                 )
                 label = "[dim](dry run)[/dim] " if self.cfg.dry_run else ""
                 console.print(f"[bold green]→[/bold green] {label}{dest}")

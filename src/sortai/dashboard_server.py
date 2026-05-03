@@ -111,6 +111,7 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
             dry_run=False,
             log_path=_cfg.log_file,  # type: ignore[union-attr]
             archive_root=_cfg.archive,  # type: ignore[union-attr]
+            interactions=item.interactions,
         )
         _store.mark_accepted(item_id, str(dest))  # type: ignore[union-attr]
         _broadcast("queue_updated")
