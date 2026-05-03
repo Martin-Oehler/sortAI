@@ -1,5 +1,6 @@
 ## Documentation
-- Make sure to update the README.md if required after making changes
+- Always read the README.md first to get a clear understanding of the project
+- Make sure to update the README.md accordingly after making code changes (only if it needs updating)
 
 ## Testing
 - You are an autonomous coding agent. Perform tests and fully verify all your work by yourself before coming back to me
