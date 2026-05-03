@@ -63,10 +63,16 @@ def show_config(ctx: click.Context) -> None:
     table.add_row("dry_run", str(cfg.dry_run))
     table.add_row("review_mode", str(cfg.review_mode))
     table.add_row("max_navigate_depth", str(cfg.max_navigate_depth))
+    table.add_row("folder_description_filename", cfg.folder_description_filename)
+    table.add_row("subfolder_preview_count", str(cfg.subfolder_preview_count))
     table.add_row("lm_studio.base_url", cfg.lm_studio.base_url)
     table.add_row("lm_studio.model", cfg.lm_studio.model)
     table.add_row("lm_studio.temperature", str(cfg.lm_studio.temperature))
     table.add_row("lm_studio.max_tokens", str(cfg.lm_studio.max_tokens))
+    table.add_row("dashboard.staging_dir", str(cfg.dashboard.staging_dir))
+    table.add_row("dashboard.rejected_dir", str(cfg.dashboard.rejected_dir))
+    table.add_row("dashboard.port", str(cfg.dashboard.port))
+    table.add_row("dashboard.auto_open_browser", str(cfg.dashboard.auto_open_browser))
 
     console.print(table)
 
