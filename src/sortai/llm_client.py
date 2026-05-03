@@ -27,12 +27,14 @@ class LMStudioClient:
         prompts_dir: Path = Path("prompts"),
         temperature: float = 0.2,
         max_tokens: int = 2048,
+        context_length: Optional[int] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         self.prompts_dir = Path(prompts_dir)
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.context_length = context_length
         self._openai = OpenAI(
             base_url=f"{self.base_url}/v1",
             api_key="lm-studio",
@@ -53,7 +55,10 @@ class LMStudioClient:
     def load_model(self) -> None:
         """POST /api/v1/models/load — no-op if the model is already loaded."""
         if not self.is_model_loaded():
-            self._post_v1("models/load", {"model": self.model_name}, timeout=300)
+            payload: dict = {"model": self.model_name}
+            if self.context_length is not None:
+                payload["context_length"] = self.context_length
+            self._post_v1("models/load", payload, timeout=300)
 
     def unload_model(self) -> None:
         """POST /api/v1/models/unload to release the model from GPU memory."""

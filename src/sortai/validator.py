@@ -176,6 +176,7 @@ def run_validation(
         prompts_dir=cfg_dry.prompts_dir,
         temperature=cfg_dry.lm_studio.temperature,
         max_tokens=cfg_dry.lm_studio.max_tokens,
+        context_length=cfg_dry.lm_studio.context_length,
     )
 
     results: list[ValidationResult] = []

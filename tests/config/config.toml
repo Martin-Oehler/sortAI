@@ -39,6 +39,10 @@ temperature = 0.2
 # Maximum tokens to generate per completion.
 max_tokens = 4096
 
+# Context window size of the loaded model (in tokens).
+# Used to compute how much document text is forwarded to the LLM per call.
+context_length = 8192
+
 # Reasoning effort: "off", "low", "medium", "high", or "on".
 # Defaults to the automatically chosen setting for the model. Not all models support this.
 reasoning = "on"
