@@ -40,6 +40,7 @@ def log_decision(
     dry_run: bool,
     log_path: Path,
     archive_root: Path | None = None,
+    interactions: list | None = None,
 ) -> None:
     """Append a JSON-lines entry to *log_path* and regenerate the HTML report."""
     entry = {
@@ -49,6 +50,7 @@ def log_decision(
         "archive_root": str(archive_root.resolve()) if archive_root else None,
         "summary": summary,
         "dry_run": dry_run,
+        "interactions": interactions or [],
     }
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as fh:
@@ -61,6 +63,7 @@ def log_error(
     reason: str,
     log_path: Path,
     archive_root: Path | None = None,
+    interactions: list | None = None,
 ) -> None:
     """Append a classification-error entry to *log_path* and regenerate the HTML report."""
     entry = {
@@ -72,6 +75,7 @@ def log_error(
         "dry_run": False,
         "error": True,
         "error_reason": reason,
+        "interactions": interactions or [],
     }
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as fh:
@@ -147,6 +151,8 @@ def _build_html(entries: list[dict]) -> str:
     table {{ border-collapse: collapse; width: 100%; }}
     th {{ cursor: pointer; background: #2c3e50; color: #fff; padding: 0.5rem 0.6rem; text-align: left; user-select: none; }}
     th:hover {{ background: #34495e; }}
+    th.no-sort {{ cursor: default; }}
+    th.no-sort:hover {{ background: #2c3e50; }}
     td {{ padding: 0.4rem 0.6rem; vertical-align: top; font-size: 0.85rem; border-bottom: 1px solid #e0e0e0; }}
     tr:nth-child(even) {{ background: #f8f9fa; }}
     tr.dry-run {{ background: #fff3cd; }}
@@ -160,6 +166,11 @@ def _build_html(entries: list[dict]) -> str:
     details summary {{ cursor: pointer; color: #333; }}
     a {{ color: #0066cc; }}
     a:hover {{ color: #004499; }}
+    .interactions {{ margin-top: 0.4rem; }}
+    .interaction {{ margin-bottom: 0.6rem; border-left: 3px solid #ccc; padding-left: 0.5rem; }}
+    .interaction h4 {{ margin: 0 0 0.2rem; font-size: 0.8rem; color: #2c3e50; }}
+    .interaction details {{ margin-top: 0.2rem; }}
+    .interaction pre {{ margin: 0.2rem 0 0; white-space: pre-wrap; font-size: 0.75rem; background: #f4f4f4; padding: 0.3rem 0.5rem; border-radius: 3px; max-height: 300px; overflow-y: auto; }}
   </style>
 </head>
 <body>
@@ -179,6 +190,7 @@ def _build_html(entries: list[dict]) -> str:
         <th onclick="sortTable(2)">Destination file</th>
         <th onclick="sortTable(3)">Summary</th>
         <th onclick="sortTable(4)">Dry run</th>
+        <th class="no-sort">LLM interactions</th>
       </tr>
     </thead>
     <tbody>
@@ -249,6 +261,8 @@ def _build_rows(entries) -> str:
             full_summary = _esc(summary)
             summary_cell = f'<details><summary>{short_summary}</summary><p>{full_summary}</p></details>'
 
+        interactions_cell = _build_interactions_cell(e.get("interactions", []))
+
         dry_class = " dry-run" if is_dry else ""
         error_class = " error" if is_error else ""
         dry_text = "Yes" if is_dry else "No"
@@ -261,6 +275,7 @@ def _build_rows(entries) -> str:
                 f'        <td class="path">{dest_cell}</td>\n'
                 f'        <td>{summary_cell}</td>\n'
                 f'        <td class="dry">{dry_text}</td>\n'
+                f'        <td>{interactions_cell}</td>\n'
                 f'      </tr>'
             )
         else:
@@ -271,6 +286,34 @@ def _build_rows(entries) -> str:
                 f'        {dest_cell}\n'
                 f'        <td>{summary_cell}</td>\n'
                 f'        <td class="dry">{dry_text}</td>\n'
+                f'        <td>{interactions_cell}</td>\n'
                 f'      </tr>'
             )
     return "\n".join(parts)
+
+
+def _build_interactions_cell(interactions: list) -> str:
+    if not interactions:
+        return '<span style="color:#aaa">—</span>'
+    items = []
+    for ix in interactions:
+        stage = _esc(str(ix.get("stage", "")))
+        step = _esc(str(ix.get("step", "")))
+        prompt = _esc(str(ix.get("prompt", "")))
+        answer = _esc(str(ix.get("answer", "")))
+        reasoning = _esc(str(ix.get("reasoning", "")))
+        reasoning_html = (
+            f'<details><summary>Reasoning</summary><pre>{reasoning}</pre></details>'
+            if reasoning else ""
+        )
+        items.append(
+            f'<div class="interaction">'
+            f'<h4>{stage} (step {step})</h4>'
+            f'<details><summary>Prompt</summary><pre>{prompt}</pre></details>'
+            f'{reasoning_html}'
+            f'<details><summary>Answer</summary><pre>{answer}</pre></details>'
+            f'</div>'
+        )
+    count = len(interactions)
+    label = f"{count} interaction{'s' if count != 1 else ''}"
+    return f'<details><summary>{label}</summary><div class="interactions">{"".join(items)}</div></details>'

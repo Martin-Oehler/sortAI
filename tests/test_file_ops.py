@@ -133,8 +133,19 @@ class TestLogDecision:
     def test_entry_has_all_required_fields(self, tmp_path: Path):
         log_path = self._call(tmp_path)
         entry = json.loads(log_path.read_text().strip())
-        for field in ("timestamp", "original_path", "new_path", "summary", "dry_run"):
+        for field in ("timestamp", "original_path", "new_path", "summary", "dry_run", "interactions"):
             assert field in entry
+
+    def test_interactions_stored_in_entry(self, tmp_path: Path):
+        interaction = {"stage": "summarize", "step": 0, "prompt": "p", "answer": "a", "reasoning": "r"}
+        log_path = self._call(tmp_path, interactions=[interaction])
+        entry = json.loads(log_path.read_text().strip())
+        assert entry["interactions"] == [interaction]
+
+    def test_interactions_defaults_to_empty_list(self, tmp_path: Path):
+        log_path = self._call(tmp_path)
+        entry = json.loads(log_path.read_text().strip())
+        assert entry["interactions"] == []
 
     def test_dry_run_recorded_in_entry(self, tmp_path: Path):
         log_path = self._call(tmp_path, dry_run=True)
