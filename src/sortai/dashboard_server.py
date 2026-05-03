@@ -30,7 +30,7 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         global _loop
-        _loop = asyncio.get_event_loop()
+        _loop = asyncio.get_running_loop()
         observer = _start_file_watcher()
         try:
             yield
@@ -147,12 +147,22 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
         async def generate():
             try:
                 while True:
-                    if await request.is_disconnected():
+                    get_task = asyncio.ensure_future(q.get())
+                    disconnect_task = asyncio.ensure_future(request.is_disconnected())
+                    done, pending = await asyncio.wait(
+                        {get_task, disconnect_task},
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for t in pending:
+                        t.cancel()
+                    if disconnect_task in done and disconnect_task.result():
                         break
-                    try:
-                        event = await asyncio.wait_for(q.get(), timeout=20)
+                    if get_task in done:
+                        event = get_task.result()
+                        if event is None:  # shutdown sentinel
+                            break
                         yield f"event: {event}\ndata: {{}}\n\n"
-                    except asyncio.TimeoutError:
+                    else:
                         yield ": keepalive\n\n"
             finally:
                 if q in _sse_clients:
@@ -226,7 +236,25 @@ def run(cfg: "Config", store: "ReviewStore", port: int, open_browser: bool) -> N
             webbrowser.open(f"http://localhost:{port}")
         threading.Thread(target=_open, daemon=True).start()
 
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+
+    _original_handle_exit = server.handle_exit
+
+    def _handle_exit(sig, frame):
+        if _loop is not None:
+            async def _close_sse():
+                for q in list(_sse_clients):
+                    await q.put(None)
+            try:
+                asyncio.run_coroutine_threadsafe(_close_sse(), _loop)
+            except RuntimeError:
+                pass
+        _original_handle_exit(sig, frame)
+
+    server.handle_exit = _handle_exit
+
     try:
-        uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+        server.run()
     except KeyboardInterrupt:
         pass
