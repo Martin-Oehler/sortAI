@@ -190,14 +190,24 @@ def _start_file_watcher():
     log_dir.mkdir(parents=True, exist_ok=True)
 
     class _Handler(FileSystemEventHandler):
-        def on_modified(self, event) -> None:  # type: ignore[override]
-            if event.is_directory:
-                return
-            name = Path(event.src_path).name
+        def _notify(self, path: str) -> None:
+            name = Path(path).name
             if name == _cfg.log_file.name:  # type: ignore[union-attr]
                 _broadcast("log_updated")
             elif name == "review_queue.json":
                 _broadcast("queue_updated")
+
+        def on_modified(self, event) -> None:  # type: ignore[override]
+            if not event.is_directory:
+                self._notify(event.src_path)
+
+        def on_created(self, event) -> None:  # type: ignore[override]
+            if not event.is_directory:
+                self._notify(event.src_path)
+
+        def on_moved(self, event) -> None:  # type: ignore[override]
+            if not event.is_directory:
+                self._notify(event.dest_path)
 
     observer = Observer()
     observer.schedule(_Handler(), str(log_dir), recursive=False)
