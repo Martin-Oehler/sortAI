@@ -41,7 +41,7 @@
   #history-list { flex: 1; overflow-y: auto; }
 
   /* ── Row cards ────────────────────────────────── */
-  .row { padding: 0.5rem 0.75rem; border-bottom: 1px solid #eef0f4; cursor: pointer; transition: background 0.1s; display: flex; align-items: flex-start; gap: 0.5rem; }
+  .row { padding: 0.5rem 0.75rem; border-bottom: 1px solid #eef0f4; cursor: pointer; transition: background 0.1s; display: flex; align-items: flex-start; gap: 0.5rem; position: relative; }
   .row:hover { background: #f0f4ff; }
   .row.focused { background: #e8efff; outline: 2px solid #4a6cf7; outline-offset: -2px; }
   .row-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
@@ -54,6 +54,52 @@
   .btn-accept:hover { background: #219150; }
   .btn-reject { background: #e74c3c; color: #fff; border: none; border-radius: 4px; padding: 0.2rem 0.55rem; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
   .btn-reject:hover { background: #c0392b; }
+
+  /* ── 3-dot menu button ───────────────────────── */
+  .row-menu-btn {
+    position: absolute; top: 6px; right: 6px;
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 1px solid #ccc; background: #fff;
+    font-size: 14px; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: #555; opacity: 0; transition: opacity 0.1s;
+    z-index: 1;
+  }
+  .row:hover .row-menu-btn, .row.focused .row-menu-btn { opacity: 1; }
+  .row-menu-btn:hover { background: #f0f4ff; border-color: #4a6cf7; }
+
+  /* ── Floating context menu ────────────────────── */
+  #context-menu {
+    position: fixed; z-index: 1000;
+    background: #fff; border: 1px solid #dde; border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    display: none; min-width: 180px;
+  }
+  #context-menu.visible { display: block; }
+  #context-menu button {
+    display: block; width: 100%; text-align: left;
+    padding: 0.5rem 0.8rem; font-size: 0.82rem;
+    background: none; border: none; cursor: pointer; color: #1a1a2e;
+  }
+  #context-menu button:hover { background: #f0f4ff; }
+
+  /* ── LLM inspection panel ────────────────────── */
+  #llm-panel { flex: 1; overflow-y: auto; padding: 1rem; display: none; background: #f7f8fc; }
+  #llm-panel.visible { display: block; }
+  .llm-stage { margin-bottom: 1.5rem; }
+  .llm-stage-title {
+    font-weight: 700; font-size: 0.85rem; text-transform: uppercase;
+    letter-spacing: 0.05em; color: #4a6cf7;
+    border-bottom: 2px solid #e0e3ea; padding-bottom: 0.3rem; margin-bottom: 0.75rem;
+  }
+  .llm-step { background: #fff; border: 1px solid #e0e3ea; border-radius: 6px; padding: 0.75rem; margin-bottom: 0.5rem; }
+  .llm-step-label { font-size: 0.75rem; color: #888; font-weight: 600; margin-bottom: 0.5rem; }
+  .llm-field-label { font-size: 0.75rem; font-weight: 600; color: #444; margin-top: 0.5rem; margin-bottom: 0.2rem; }
+  .llm-field-value { font-size: 0.8rem; color: #222; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+  .llm-prompt-toggle { margin-top: 0.5rem; }
+  .llm-prompt-toggle summary { font-size: 0.75rem; color: #4a6cf7; cursor: pointer; }
+  .llm-prompt-toggle pre { margin-top: 0.4rem; background: #f0f2f5; padding: 0.5rem; border-radius: 4px; font-size: 0.73rem; white-space: pre-wrap; word-break: break-all; overflow-x: auto; }
+  .llm-empty { color: #999; font-style: italic; font-size: 0.85rem; padding: 1rem; }
 
   /* ── Right panel (PDF preview) ───────────────── */
   #right { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #e8eaf0; }
@@ -106,7 +152,13 @@
   <div id="right">
     <div id="preview-hint">Click a row to preview the PDF</div>
     <iframe id="pdf-frame" src="about:blank"></iframe>
+    <div id="llm-panel"></div>
   </div>
+</div>
+
+<!-- Floating context menu -->
+<div id="context-menu">
+  <button onclick="inspectFromMenu()">🔍 Inspect LLM interaction</button>
 </div>
 
 <script>
@@ -188,6 +240,7 @@ function renderReview() {
           <button class="btn-reject" onclick="event.stopPropagation();rejectItem('${item.id}')">Reject ✗</button>
         </div>
       </div>
+      <button class="row-menu-btn" title="Options" onclick="event.stopPropagation();openContextMenu(event,'${item.id}','queue',null)">⋯</button>
     </div>`).join('');
 }
 
@@ -242,6 +295,7 @@ function renderHistory() {
         <div class="row-dest">${r.dest ? esc(r.dest) : '<span style="color:#e67e22">'+esc(r.summary.slice(0,80))+'</span>'}</div>
         <div class="row-summary" style="color:#999">${esc(ts)}</div>
       </div>
+      <button class="row-menu-btn" title="Options" onclick="event.stopPropagation();openContextMenu(event,'${r.id}','${r.type}',${r.type === 'log' ? r.logIdx : 'null'})">⋯</button>
     </div>`;
   }).join('');
 }
@@ -251,6 +305,8 @@ function selectRow(id, type, fileUrl) {
   focusedId = id;
   renderAll();
 
+  document.getElementById('llm-panel').classList.remove('visible');
+
   const url = fileUrl || (type === 'queue' ? `/files/queue/${id}` : null);
   if (!url) return;
   const frame = document.getElementById('pdf-frame');
@@ -259,6 +315,81 @@ function selectRow(id, type, fileUrl) {
   frame.classList.add('visible');
   hint.style.display = 'none';
 }
+
+// ── Context menu ───────────────────────────────────────────────────────────
+function openContextMenu(event, id, type, logIdx) {
+  const menu = document.getElementById('context-menu');
+  const rect = event.currentTarget.getBoundingClientRect();
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.left = rect.left + 'px';
+  menu.dataset.id = id;
+  menu.dataset.type = type;
+  menu.dataset.logIdx = logIdx ?? '';
+  menu.classList.add('visible');
+  event.stopPropagation();
+}
+
+function inspectFromMenu() {
+  const menu = document.getElementById('context-menu');
+  const id = menu.dataset.id;
+  const type = menu.dataset.type;
+  const logIdx = menu.dataset.logIdx !== '' ? parseInt(menu.dataset.logIdx) : null;
+  menu.classList.remove('visible');
+  inspectInteractions(id, type, logIdx);
+}
+
+function inspectInteractions(id, type, logIdx) {
+  let interactions = [];
+  if (type === 'queue') {
+    const item = queueItems.find(i => i.id === id);
+    interactions = item?.interactions || [];
+  } else {
+    const entry = logEntries[logIdx];
+    interactions = entry?.interactions || [];
+  }
+  const panel = document.getElementById('llm-panel');
+  const frame = document.getElementById('pdf-frame');
+  const hint = document.getElementById('preview-hint');
+  hint.style.display = 'none';
+  frame.classList.remove('visible');
+  panel.innerHTML = renderInteractionsHtml(interactions);
+  panel.classList.add('visible');
+}
+
+function renderInteractionsHtml(interactions) {
+  if (!interactions || interactions.length === 0)
+    return '<div class="llm-empty">No LLM interaction data available.</div>';
+
+  const stageOrder = ['summarize', 'navigate', 'choose_filename'];
+  const stageLabels = { summarize: 'Stage 1: Summarize', navigate: 'Stage 2: Navigate to Folder', choose_filename: 'Stage 3: Choose Filename' };
+  const groups = {};
+  for (const ix of interactions) {
+    (groups[ix.stage] = groups[ix.stage] || []).push(ix);
+  }
+  const stages = stageOrder.filter(s => groups[s]).concat(
+    Object.keys(groups).filter(s => !stageOrder.includes(s))
+  );
+  return stages.map(stage => {
+    const label = stageLabels[stage] || stage;
+    const steps = groups[stage];
+    const stepsHtml = steps.map((ix, i) => `
+      <div class="llm-step">
+        ${steps.length > 1 ? `<div class="llm-step-label">Step ${ix.step ?? i + 1}</div>` : ''}
+        ${ix.reasoning ? `<div class="llm-field-label">Reasoning</div><div class="llm-field-value">${esc(ix.reasoning)}</div>` : ''}
+        <div class="llm-field-label">Answer</div>
+        <div class="llm-field-value">${esc(ix.answer)}</div>
+        <details class="llm-prompt-toggle">
+          <summary>Show prompt</summary>
+          <pre>${esc(ix.prompt)}</pre>
+        </details>
+      </div>`).join('');
+    return `<div class="llm-stage"><div class="llm-stage-title">${esc(label)}</div>${stepsHtml}</div>`;
+  }).join('');
+}
+
+document.addEventListener('click', () => {
+  document.getElementById('context-menu').classList.remove('visible');
+});
 
 async function acceptItem(id) {
   try {
