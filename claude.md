@@ -1,3 +1,6 @@
+## Command line use
+- Always use bash unless otherwise instructed
+
 ## Documentation
 - Always read the README.md first to get a clear understanding of the project
 - Make sure to update the README.md accordingly after making code changes (only if it needs updating)

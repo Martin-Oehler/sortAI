@@ -181,6 +181,44 @@ async function revealFromMenu() {
   } catch (e) { showToast('Reveal error: ' + e, true); }
 }
 
+function retriggerFromMenu() {
+  const menu = document.getElementById('context-menu');
+  const overlay = document.getElementById('retrigger-overlay');
+  overlay.dataset.id = menu.dataset.id;
+  overlay.dataset.type = menu.dataset.type;
+  overlay.dataset.logIdx = menu.dataset.logIdx;
+  menu.classList.remove('visible');
+  document.getElementById('retrigger-hint').value = '';
+  overlay.classList.add('visible');
+  document.getElementById('retrigger-hint').focus();
+}
+
+function retriggerCancel() {
+  document.getElementById('retrigger-overlay').classList.remove('visible');
+}
+
+async function retriggerSubmit() {
+  const overlay = document.getElementById('retrigger-overlay');
+  const hint = document.getElementById('retrigger-hint').value.trim();
+  const id = overlay.dataset.id;
+  const type = overlay.dataset.type;
+  const logIdx = overlay.dataset.logIdx;
+  overlay.classList.remove('visible');
+  try {
+    const r = await fetch('/api/reprocess', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, type, log_idx: logIdx !== '' ? parseInt(logIdx) : null, hint })
+    });
+    if (r.ok) {
+      showToast('Re-processing started — the queue will update when done.');
+    } else {
+      const e = await r.json();
+      showToast('Re-process failed: ' + (e.detail || r.status), true);
+    }
+  } catch (e) { showToast('Re-process error: ' + e, true); }
+}
+
 function inspectFromMenu() {
   const menu = document.getElementById('context-menu');
   const id = menu.dataset.id;
@@ -290,7 +328,12 @@ function allFocusableRows() {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON') return;
+  if (e.key === 'Escape') {
+    document.getElementById('retrigger-overlay').classList.remove('visible');
+    document.getElementById('context-menu').classList.remove('visible');
+    return;
+  }
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'TEXTAREA') return;
   const rows = allFocusableRows();
   if (rows.length === 0) return;
   const idx = focusedId ? rows.findIndex(r => r.id === focusedId) : -1;

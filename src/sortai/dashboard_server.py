@@ -142,6 +142,97 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
 
         return JSONResponse({"status": "ok"})
 
+    @app.post("/api/reprocess")
+    async def reprocess_file(request: Request) -> JSONResponse:
+        import shutil
+        import threading
+        import uuid as _uuid
+
+        data = await request.json()
+        item_type = data.get("type")
+        item_id = data.get("id")
+        log_idx = data.get("log_idx")
+        hint = (data.get("hint") or "").strip() or None
+
+        if item_type == "queue":
+            try:
+                item = _store.get(item_id)  # type: ignore[union-attr]
+            except KeyError:
+                raise HTTPException(status_code=404, detail="Item not found")
+            if item.status == "pending":
+                source_path = Path(item.staging_path)
+            elif item.resolved_path:
+                source_path = Path(item.resolved_path)
+            else:
+                raise HTTPException(status_code=404, detail="No file path")
+            original_filename = item.original_filename
+        elif item_type == "log":
+            from sortai.file_ops import load_jsonl_entries
+            entries = load_jsonl_entries(_cfg.log_file)  # type: ignore[union-attr]
+            if log_idx is None or log_idx < 0 or log_idx >= len(entries):
+                raise HTTPException(status_code=404, detail="Log entry not found")
+            entry = entries[log_idx]
+            new_path = entry.get("new_path", "")
+            if not new_path:
+                raise HTTPException(status_code=404, detail="No file path in log entry")
+            source_path = Path(new_path)
+            original_filename = source_path.name
+        else:
+            raise HTTPException(status_code=400, detail="Invalid item type")
+
+        source_path = source_path.resolve()
+        if not source_path.exists():
+            raise HTTPException(status_code=404, detail="File not found on disk")
+
+        staging_dir = (
+            _cfg.dashboard.staging_dir  # type: ignore[union-attr]
+            if _cfg.dashboard.staging_dir  # type: ignore[union-attr]
+            else _cfg.inbox.parent / "_review"  # type: ignore[union-attr]
+        )
+        staging_dir.mkdir(parents=True, exist_ok=True)
+        staged_path = staging_dir / f"{_uuid.uuid4()}_{original_filename}"
+        shutil.copy2(source_path, staged_path)
+
+        def _run_pipeline() -> None:
+            from sortai.llm_client import LMStudioClient
+            from sortai.pipeline import ClassificationError, Pipeline
+            from sortai.review_store import make_review_item
+
+            client = LMStudioClient(
+                base_url=_cfg.lm_studio.base_url,  # type: ignore[union-attr]
+                model_name=_cfg.lm_studio.model,  # type: ignore[union-attr]
+                prompts_dir=_cfg.prompts_dir,  # type: ignore[union-attr]
+                temperature=_cfg.lm_studio.temperature,  # type: ignore[union-attr]
+                max_tokens=_cfg.lm_studio.max_tokens,  # type: ignore[union-attr]
+                context_length=_cfg.lm_studio.context_length,  # type: ignore[union-attr]
+            )
+            try:
+                with client:
+                    pipeline = Pipeline(_cfg, client)  # type: ignore[arg-type]
+                    target_folder, filename, summary, interactions = pipeline.run(staged_path, user_hint=hint)
+            except ClassificationError:
+                staged_path.unlink(missing_ok=True)
+                return
+            except Exception:
+                staged_path.unlink(missing_ok=True)
+                return
+
+            rel_folder = str(target_folder.relative_to(_cfg.archive))  # type: ignore[union-attr]
+            new_item = make_review_item(
+                original_filename=original_filename,
+                staging_path=staged_path,
+                proposed_folder=rel_folder,
+                proposed_filename=filename,
+                summary=summary,
+                interactions=interactions,
+            )
+            _store.add(new_item)  # type: ignore[union-attr]
+            _broadcast("queue_updated")
+
+        threading.Thread(target=_run_pipeline, daemon=True).start()
+        from fastapi.responses import JSONResponse as _JSONResponse
+        return _JSONResponse({"status": "reprocessing"}, status_code=202)
+
     @app.post("/api/accept/{item_id}")
     def accept_item(item_id: str) -> JSONResponse:
         _store.reload()  # type: ignore[union-attr]
