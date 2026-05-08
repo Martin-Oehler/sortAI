@@ -11,3 +11,7 @@ You are a document analysis assistant. Read the document below and respond with 
 **Document content:**
 
 {{document_text}}
+
+---
+
+**User hint:** {{user_hint}}

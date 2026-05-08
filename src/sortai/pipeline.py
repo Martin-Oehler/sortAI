@@ -33,6 +33,12 @@ class StageInteraction(TypedDict):
 _MAX_TEXT_CHARS = 4000
 
 
+def _apply_hint(prompt: str, hint: str | None) -> str:
+    if hint:
+        return prompt.replace("{{user_hint}}", hint)
+    return re.sub(r"[^\n]*\{\{user_hint\}\}[^\n]*\n?", "", prompt)
+
+
 def _truncate(text: str) -> str:
     if len(text) <= _MAX_TEXT_CHARS:
         return text
@@ -65,13 +71,13 @@ class Pipeline:
             self._console.print(Panel(reasoning.strip(), title="[dim]reasoning[/dim]", border_style="yellow"))
         self._console.print(Panel(response.strip(), title="[dim]response[/dim]", border_style="green"))
 
-    def summarize(self, text: str) -> tuple[str, list[StageInteraction]]:
+    def summarize(self, text: str, user_hint: str | None = None) -> tuple[str, list[StageInteraction]]:
         """Stage 1 — summarize the document text.
 
         Raises ClassificationError if the model determines the content is unclassifiable.
         """
         template = self.client.load_prompt("summarize")
-        prompt = template.replace("{{document_text}}", _truncate(text))
+        prompt = _apply_hint(template.replace("{{document_text}}", _truncate(text)), user_hint)
         schema = {
             "type": "object",
             "properties": {
@@ -97,7 +103,7 @@ class Pipeline:
             raise ClassificationError(parsed.get("reason") or "model refused to classify")
         return parsed["summary"].strip(), interactions
 
-    def navigate_to_folder(self, text: str, summary: str) -> tuple[Path, list[StageInteraction]]:
+    def navigate_to_folder(self, text: str, summary: str, user_hint: str | None = None) -> tuple[Path, list[StageInteraction]]:
         """Stage 2 — walk the archive tree to find the best target folder."""
         template = self.client.load_prompt("navigate")
         current = self.config.archive
@@ -124,12 +130,13 @@ class Pipeline:
                     line += f" — {info.description}"
                 listing_lines.append(line)
             folder_listing = "\n".join(listing_lines)
-            prompt = (
+            prompt = _apply_hint(
                 template
                 .replace("{{current_folder}}", str(current))
                 .replace("{{folder_listing}}", folder_listing)
                 .replace("{{summary}}", summary)
-                .replace("{{document_text}}", short_text)
+                .replace("{{document_text}}", short_text),
+                user_hint,
             )
             schema = {
                 "type": "object",
@@ -157,18 +164,19 @@ class Pipeline:
 
         return current, interactions
 
-    def choose_filename(self, text: str, summary: str, target: Path) -> tuple[str, list[StageInteraction]]:
+    def choose_filename(self, text: str, summary: str, target: Path, user_hint: str | None = None) -> tuple[str, list[StageInteraction]]:
         """Stage 3 — pick a sanitised filename (with .pdf extension)."""
         existing = sorted(p.name for p in target.iterdir() if p.is_file()) if target.exists() else []
         existing_files = "\n".join(f"- {f}" for f in existing[:20]) or "(none)"
 
         template = self.client.load_prompt("name_file")
-        prompt = (
+        prompt = _apply_hint(
             template
             .replace("{{target_folder}}", str(target))
             .replace("{{existing_files}}", existing_files)
             .replace("{{summary}}", summary)
-            .replace("{{document_text}}", _truncate(text))
+            .replace("{{document_text}}", _truncate(text)),
+            user_hint,
         )
         schema = {
             "type": "object",
@@ -190,10 +198,10 @@ class Pipeline:
                 reasoning=parsed.get("reasoning", ""))
         return result, interactions
 
-    def run(self, pdf_path: Path) -> tuple[Path, str, str, list[StageInteraction]]:
+    def run(self, pdf_path: Path, user_hint: str | None = None) -> tuple[Path, str, str, list[StageInteraction]]:
         """Run all three stages and return (target_folder, filename, summary, interactions)."""
         text = extract_text(pdf_path)
-        summary, s1 = self.summarize(text)
-        target_folder, s2 = self.navigate_to_folder(text, summary)
-        filename, s3 = self.choose_filename(text, summary, target_folder)
+        summary, s1 = self.summarize(text, user_hint)
+        target_folder, s2 = self.navigate_to_folder(text, summary, user_hint)
+        filename, s3 = self.choose_filename(text, summary, target_folder, user_hint)
         return target_folder, filename, summary, s1 + s2 + s3

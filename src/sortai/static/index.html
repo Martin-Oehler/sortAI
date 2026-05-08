@@ -58,6 +58,20 @@
 <div id="context-menu">
   <button onclick="inspectFromMenu()">🔍 Inspect LLM interaction</button>
   <button onclick="revealFromMenu()">📂 Reveal in Explorer</button>
+  <button onclick="retriggerFromMenu()">🔄 Re-trigger processing</button>
+</div>
+
+<!-- Re-trigger modal -->
+<div id="retrigger-overlay">
+  <div id="retrigger-modal">
+    <h2>Re-trigger processing</h2>
+    <p>The file will be re-classified by the LLM. Add an optional hint to guide it.</p>
+    <textarea id="retrigger-hint" placeholder="e.g. This is a tax document from 2023" rows="4"></textarea>
+    <div id="retrigger-actions">
+      <button onclick="retriggerCancel()">Cancel</button>
+      <button id="retrigger-submit" onclick="retriggerSubmit()">Re-process</button>
+    </div>
+  </div>
 </div>
 
 <div id="toast"></div>

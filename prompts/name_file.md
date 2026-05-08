@@ -32,3 +32,7 @@ Respond with a JSON object with these fields:
 **Original document content (for reference):**
 
 {{document_text}}
+
+---
+
+**User hint:** {{user_hint}}

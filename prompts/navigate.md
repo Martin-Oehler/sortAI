@@ -28,3 +28,7 @@ Reply with **only** the folder name or `.` — nothing else.
 **Original document content (for reference):**
 
 {{document_text}}
+
+---
+
+**User hint:** {{user_hint}}
