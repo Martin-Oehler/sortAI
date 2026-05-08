@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 if TYPE_CHECKING:
     from sortai.config import Config
@@ -39,15 +40,15 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
             observer.join(timeout=2)
 
     app = FastAPI(title="sortAI Dashboard", lifespan=lifespan)
+    app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
     # ------------------------------------------------------------------
     # Routes
     # ------------------------------------------------------------------
 
-    @app.get("/", response_class=HTMLResponse)
-    def index() -> HTMLResponse:
-        html_path = Path(__file__).parent / "static" / "index.html"
-        return HTMLResponse(html_path.read_text(encoding="utf-8"))
+    @app.get("/")
+    def index() -> FileResponse:
+        return FileResponse(Path(__file__).parent / "static" / "index.html")
 
     @app.get("/api/queue")
     def get_queue() -> list:
