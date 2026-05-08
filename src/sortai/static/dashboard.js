@@ -53,31 +53,37 @@ function renderAll() {
 }
 
 function renderReview() {
-  const pending = queueItems.filter(i => i.status === 'pending');
+  const reviewItems = queueItems.filter(i => i.status === 'pending' || i.status === 'reprocessing');
+  const pendingCount = queueItems.filter(i => i.status === 'pending').length;
   const badge = document.getElementById('pending-badge');
-  badge.textContent = 'Needs Review: ' + pending.length;
-  badge.classList.toggle('visible', pending.length > 0);
+  badge.textContent = 'Needs Review: ' + pendingCount;
+  badge.classList.toggle('visible', pendingCount > 0);
 
   const list = document.getElementById('review-list');
-  if (pending.length === 0) {
+  if (reviewItems.length === 0) {
     list.innerHTML = '<div id="review-empty">No items awaiting review.</div>';
     return;
   }
-  list.innerHTML = pending.map(item => `
-    <div class="row${focusedId === item.id ? ' focused' : ''}"
+  list.innerHTML = reviewItems.map(item => {
+    const isReprocessing = item.status === 'reprocessing';
+    return `
+    <div class="row${focusedId === item.id ? ' focused' : ''}${isReprocessing ? ' reprocessing' : ''}"
          id="row-${item.id}"
          onclick="selectRow('${item.id}', 'queue')">
-      <span class="row-icon">📄</span>
+      ${isReprocessing ? '<span class="spinner"></span>' : '<span class="row-icon">📄</span>'}
       <div class="row-body">
         <div class="row-filename" title="${esc(item.original_filename)}">${esc(item.original_filename)}</div>
         <div class="row-dest">→ ${esc(item.proposed_folder)}/${esc(item.proposed_filename)}</div>
-        <div class="row-actions">
+        ${isReprocessing
+          ? '<span class="reprocessing-label">Re-processing…</span>'
+          : `<div class="row-actions">
           <button class="btn-accept" onclick="event.stopPropagation();acceptItem('${item.id}')">Accept ✓</button>
           <button class="btn-reject" onclick="event.stopPropagation();rejectItem('${item.id}')">Reject ✗</button>
-        </div>
+        </div>`}
       </div>
       <button class="row-menu-btn" title="Options" onclick="event.stopPropagation();openContextMenu(event,'${item.id}','queue',null)">⋯</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function renderHistory() {
