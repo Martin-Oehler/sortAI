@@ -101,6 +101,27 @@ class ReviewStore:
                     break
             self._save()
 
+    def mark_reprocessing(self, item_id: str) -> None:
+        with self._lock:
+            for item in self._items:
+                if item.id == item_id:
+                    item.status = "reprocessing"
+                    break
+            self._save()
+
+    def mark_pending(self, item_id: str) -> None:
+        with self._lock:
+            for item in self._items:
+                if item.id == item_id:
+                    item.status = "pending"
+                    break
+            self._save()
+
+    def remove(self, item_id: str) -> None:
+        with self._lock:
+            self._items = [i for i in self._items if i.id != item_id]
+            self._save()
+
     def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(".tmp")

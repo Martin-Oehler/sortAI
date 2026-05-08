@@ -153,19 +153,21 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
         item_id = data.get("id")
         log_idx = data.get("log_idx")
         hint = (data.get("hint") or "").strip() or None
+        original_item_id: str | None = None
 
         if item_type == "queue":
             try:
                 item = _store.get(item_id)  # type: ignore[union-attr]
             except KeyError:
                 raise HTTPException(status_code=404, detail="Item not found")
-            if item.status == "pending":
+            if item.status in ("pending", "reprocessing"):
                 source_path = Path(item.staging_path)
             elif item.resolved_path:
                 source_path = Path(item.resolved_path)
             else:
                 raise HTTPException(status_code=404, detail="No file path")
             original_filename = item.original_filename
+            original_item_id = item_id
         elif item_type == "log":
             from sortai.file_ops import load_jsonl_entries
             entries = load_jsonl_entries(_cfg.log_file)  # type: ignore[union-attr]
@@ -193,6 +195,10 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
         staged_path = staging_dir / f"{_uuid.uuid4()}_{original_filename}"
         shutil.copy2(source_path, staged_path)
 
+        if original_item_id:
+            _store.mark_reprocessing(original_item_id)  # type: ignore[union-attr]
+            _broadcast("queue_updated")
+
         def _run_pipeline() -> None:
             from sortai.llm_client import LMStudioClient
             from sortai.pipeline import ClassificationError, Pipeline
@@ -210,11 +216,11 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
                 with client:
                     pipeline = Pipeline(_cfg, client)  # type: ignore[arg-type]
                     target_folder, filename, summary, interactions = pipeline.run(staged_path, user_hint=hint)
-            except ClassificationError:
-                staged_path.unlink(missing_ok=True)
-                return
             except Exception:
                 staged_path.unlink(missing_ok=True)
+                if original_item_id:
+                    _store.mark_pending(original_item_id)  # type: ignore[union-attr]
+                    _broadcast("queue_updated")
                 return
 
             rel_folder = str(target_folder.relative_to(_cfg.archive))  # type: ignore[union-attr]
@@ -226,6 +232,8 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
                 summary=summary,
                 interactions=interactions,
             )
+            if original_item_id:
+                _store.remove(original_item_id)  # type: ignore[union-attr]
             _store.add(new_item)  # type: ignore[union-attr]
             _broadcast("queue_updated")
 
