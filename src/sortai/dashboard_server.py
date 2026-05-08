@@ -132,7 +132,7 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
         system = platform.system()
         try:
             if system == "Windows":
-                subprocess.Popen(["explorer", f"/select,{path}"])
+                subprocess.Popen(f'explorer /select,"{path}"', shell=True)
             elif system == "Darwin":
                 subprocess.Popen(["open", "-R", str(path)])
             else:
