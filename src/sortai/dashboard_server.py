@@ -91,6 +91,57 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
             raise HTTPException(status_code=404, detail="File not found on disk")
         return FileResponse(str(path), media_type="application/pdf")
 
+    @app.post("/reveal")
+    async def reveal_file(request: Request) -> JSONResponse:
+        import platform
+        import subprocess
+
+        data = await request.json()
+        item_type = data.get("type")
+        item_id = data.get("id")
+        log_idx = data.get("log_idx")
+
+        if item_type == "queue":
+            try:
+                item = _store.get(item_id)  # type: ignore[union-attr]
+            except KeyError:
+                raise HTTPException(status_code=404, detail="Item not found")
+            if item.status == "pending":
+                path = Path(item.staging_path)
+            elif item.resolved_path:
+                path = Path(item.resolved_path)
+            else:
+                raise HTTPException(status_code=404, detail="No file path")
+        elif item_type == "log":
+            from sortai.file_ops import load_jsonl_entries
+            entries = load_jsonl_entries(_cfg.log_file)  # type: ignore[union-attr]
+            if log_idx is None or log_idx < 0 or log_idx >= len(entries):
+                raise HTTPException(status_code=404, detail="Log entry not found")
+            entry = entries[log_idx]
+            new_path = entry.get("new_path", "")
+            if not new_path:
+                raise HTTPException(status_code=404, detail="No file path in log entry")
+            path = Path(new_path)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid item type")
+
+        path = path.resolve()
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="File not found on disk")
+
+        system = platform.system()
+        try:
+            if system == "Windows":
+                subprocess.Popen(["explorer", f"/select,{path}"])
+            elif system == "Darwin":
+                subprocess.Popen(["open", "-R", str(path)])
+            else:
+                subprocess.Popen(["xdg-open", str(path.parent)])
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Could not open explorer: {exc}")
+
+        return JSONResponse({"status": "ok"})
+
     @app.post("/api/accept/{item_id}")
     def accept_item(item_id: str) -> JSONResponse:
         _store.reload()  # type: ignore[union-attr]
