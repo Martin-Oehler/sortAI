@@ -20,7 +20,9 @@
   #main { flex: 1; display: flex; overflow: hidden; gap: 0; }
 
   /* ── Left panel ──────────────────────────────── */
-  #left { width: 420px; min-width: 280px; display: flex; flex-direction: column; overflow: hidden; background: #fff; border-right: 1px solid #dde; }
+  #left { width: 420px; min-width: 200px; max-width: 70vw; display: flex; flex-direction: column; overflow: hidden; background: #fff; }
+  #divider { width: 5px; background: #dde; cursor: col-resize; flex-shrink: 0; transition: background 0.1s; }
+  #divider:hover, #divider.dragging { background: #4a6cf7; }
 
   /* ── Review section ──────────────────────────── */
   #review-section { flex-shrink: 0; border-bottom: 2px solid #e0e3ea; }
@@ -45,7 +47,7 @@
   .row-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
   .row-body { flex: 1; min-width: 0; }
   .row-filename { font-weight: 600; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .row-dest { font-size: 0.75rem; color: #555; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-dest { font-size: 0.75rem; color: #555; font-family: monospace; white-space: normal; word-break: break-all; }
   .row-summary { font-size: 0.75rem; color: #777; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .row-actions { display: flex; gap: 0.3rem; margin-top: 0.35rem; }
   .btn-accept { background: #27ae60; color: #fff; border: none; border-radius: 4px; padding: 0.2rem 0.55rem; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
@@ -96,6 +98,9 @@
     </div>
 
   </div>
+
+  <!-- Divider -->
+  <div id="divider"></div>
 
   <!-- Right panel -->
   <div id="right">
@@ -178,7 +183,6 @@ function renderReview() {
       <div class="row-body">
         <div class="row-filename" title="${esc(item.original_filename)}">${esc(item.original_filename)}</div>
         <div class="row-dest">→ ${esc(item.proposed_folder)}/${esc(item.proposed_filename)}</div>
-        <div class="row-summary">${esc(item.summary)}</div>
         <div class="row-actions">
           <button class="btn-accept" onclick="event.stopPropagation();acceptItem('${item.id}')">Accept ✓</button>
           <button class="btn-reject" onclick="event.stopPropagation();rejectItem('${item.id}')">Reject ✗</button>
@@ -352,6 +356,37 @@ function relPath(newPath, archiveRoot) {
   if (ar && np.startsWith(ar)) return np.slice(ar.length);
   return basename(np);
 }
+
+// ── Draggable divider ──────────────────────────────────────────────────────
+(function () {
+  const divider = document.getElementById('divider');
+  const left = document.getElementById('left');
+
+  const saved = localStorage.getItem('leftPanelWidth');
+  if (saved) left.style.width = saved + 'px';
+
+  divider.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = left.offsetWidth;
+    divider.classList.add('dragging');
+
+    function onMove(e) {
+      const w = Math.min(Math.max(startWidth + e.clientX - startX, 200), window.innerWidth * 0.7);
+      left.style.width = w + 'px';
+    }
+
+    function onUp() {
+      divider.classList.remove('dragging');
+      localStorage.setItem('leftPanelWidth', left.offsetWidth);
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+})();
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 init();
