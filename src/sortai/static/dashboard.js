@@ -165,6 +165,22 @@ function openContextMenu(event, id, type, logIdx) {
   event.stopPropagation();
 }
 
+async function revealFromMenu() {
+  const menu = document.getElementById('context-menu');
+  const id = menu.dataset.id;
+  const type = menu.dataset.type;
+  const logIdx = menu.dataset.logIdx;
+  menu.classList.remove('visible');
+  try {
+    const r = await fetch('/reveal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, type, log_idx: logIdx !== '' ? parseInt(logIdx) : null })
+    });
+    if (!r.ok) { const e = await r.json(); showToast('Reveal failed: ' + (e.detail || r.status), true); }
+  } catch (e) { showToast('Reveal error: ' + e, true); }
+}
+
 function inspectFromMenu() {
   const menu = document.getElementById('context-menu');
   const id = menu.dataset.id;
@@ -230,8 +246,8 @@ document.addEventListener('click', () => {
 async function acceptItem(id) {
   try {
     const r = await fetch(`/api/accept/${id}`, { method: 'POST' });
-    if (!r.ok) { const e = await r.json(); alert('Accept failed: ' + (e.detail || r.status)); }
-  } catch (e) { alert('Accept error: ' + e); }
+    if (!r.ok) { const e = await r.json(); showToast('Accept failed: ' + (e.detail || r.status), true); }
+  } catch (e) { showToast('Accept error: ' + e, true); }
   await fetchQueue();
   renderAll();
 }
@@ -239,8 +255,8 @@ async function acceptItem(id) {
 async function rejectItem(id) {
   try {
     const r = await fetch(`/api/reject/${id}`, { method: 'POST' });
-    if (!r.ok) { const e = await r.json(); alert('Reject failed: ' + (e.detail || r.status)); }
-  } catch (e) { alert('Reject error: ' + e); }
+    if (!r.ok) { const e = await r.json(); showToast('Reject failed: ' + (e.detail || r.status), true); }
+  } catch (e) { showToast('Reject error: ' + e, true); }
   await fetchQueue();
   renderAll();
 }
@@ -304,6 +320,15 @@ function scrollToRow(id) {
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────
+function showToast(message, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = message;
+  t.classList.toggle('error', isError);
+  t.classList.add('visible');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('visible'), 3000);
+}
+
 function esc(str) {
   return String(str)
     .replace(/&/g, '&amp;')
