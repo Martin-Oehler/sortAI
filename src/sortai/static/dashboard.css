@@ -119,7 +119,7 @@
   #retrigger-modal h2 { margin: 0; font-size: 1rem; color: #1a1a2e; }
   #retrigger-modal p { margin: 0; font-size: 0.82rem; color: #555; }
   #retrigger-hint {
-    width: 100%; box-sizing: border-box; resize: vertical;
+    width: 100%; box-sizing: border-box;
     font-family: inherit; font-size: 0.85rem; padding: 0.5rem 0.6rem;
     border: 1px solid #ccd; border-radius: 5px; color: #1a1a2e;
     outline-color: #4a6cf7;
