@@ -293,22 +293,43 @@ document.addEventListener('click', () => {
   document.getElementById('context-menu').classList.remove('visible');
 });
 
+function _nextPendingId(currentId) {
+  const rows = allFocusableRows();
+  const idx = rows.findIndex(r => r.id === currentId);
+  if (idx === -1) return null;
+  const candidate = rows[idx + 1] ?? rows[idx - 1] ?? null;
+  return candidate && candidate.type === 'queue' ? candidate.id : null;
+}
+
+function _focusNext(nextId) {
+  if (!nextId) return;
+  const stillPending = queueItems.find(i => i.id === nextId && i.status === 'pending');
+  if (stillPending) {
+    selectRow(nextId, 'queue');
+    scrollToRow(nextId);
+  }
+}
+
 async function acceptItem(id) {
+  const nextId = _nextPendingId(id);
   try {
     const r = await fetch(`/api/accept/${id}`, { method: 'POST' });
     if (!r.ok) { const e = await r.json(); showToast('Accept failed: ' + (e.detail || r.status), true); }
   } catch (e) { showToast('Accept error: ' + e, true); }
   await fetchQueue();
   renderAll();
+  _focusNext(nextId);
 }
 
 async function rejectItem(id) {
+  const nextId = _nextPendingId(id);
   try {
     const r = await fetch(`/api/reject/${id}`, { method: 'POST' });
     if (!r.ok) { const e = await r.json(); showToast('Reject failed: ' + (e.detail || r.status), true); }
   } catch (e) { showToast('Reject error: ' + e, true); }
   await fetchQueue();
   renderAll();
+  _focusNext(nextId);
 }
 
 async function acceptAll() {
