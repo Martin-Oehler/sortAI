@@ -10,6 +10,12 @@ async function init() {
   await Promise.all([fetchQueue(), fetchLog()]);
   renderAll();
   connectSSE();
+  document.getElementById('retrigger-hint').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      retriggerSubmit();
+    }
+  });
 }
 
 // ── Data fetching ──────────────────────────────────────────────────────────
