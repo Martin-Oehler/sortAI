@@ -133,11 +133,24 @@ def ping_lm_studio(ctx: click.Context) -> None:
         ttl=cfg.lm_studio.model_ttl,
     )
 
+    ping_schema = {
+        "type": "object",
+        "properties": {"message": {"type": "string"}},
+        "required": ["message"],
+        "additionalProperties": False,
+    }
+
     try:
-        console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
-        client.load_model()
+        if cfg.lm_studio.model_ttl is None:
+            console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
+            client.load_model()
         console.print("[cyan]Sending hello…[/cyan]")
-        reply = client.complete("Hello! Please respond with a single short sentence.").content
+        raw = client.complete_structured(
+            'Reply with a single short greeting sentence in JSON, e.g. {"message": "Hello!"}',
+            ping_schema,
+        ).content
+        import json as _json
+        reply = _json.loads(raw).get("message", raw)
         console.print(f"\n[bold green]Response:[/bold green] {reply}\n")
     except RuntimeError as exc:
         console.print(f"\n[bold red]Error:[/bold red] {exc}")
