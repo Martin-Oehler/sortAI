@@ -296,33 +296,6 @@ class TestCompleteStructuredTTL:
         call_kwargs = client._openai.chat.completions.create.call_args.kwargs
         assert "extra_body" not in call_kwargs
 
-    def test_complete_structured_includes_context_length_in_extra_body(self, tmp_path: Path) -> None:
-        with patch("sortai.llm_client.OpenAI"):
-            client = LMStudioClient(
-                base_url=BASE_URL, model_name=MODEL, prompts_dir=tmp_path, context_length=4096
-            )
-        mock_response = MagicMock()
-        mock_response.choices[0].message.content = '{"answer": "yes"}'
-        client._openai.chat.completions.create = MagicMock(return_value=mock_response)
-
-        client.complete_structured("prompt", self._SCHEMA)
-
-        call_kwargs = client._openai.chat.completions.create.call_args.kwargs
-        assert call_kwargs.get("extra_body") == {"context_length": 4096}
-
-    def test_complete_structured_includes_both_ttl_and_context_length(self, tmp_path: Path) -> None:
-        with patch("sortai.llm_client.OpenAI"):
-            client = LMStudioClient(
-                base_url=BASE_URL, model_name=MODEL, prompts_dir=tmp_path, ttl=60, context_length=4096
-            )
-        mock_response = MagicMock()
-        mock_response.choices[0].message.content = '{"answer": "yes"}'
-        client._openai.chat.completions.create = MagicMock(return_value=mock_response)
-
-        client.complete_structured("prompt", self._SCHEMA)
-
-        call_kwargs = client._openai.chat.completions.create.call_args.kwargs
-        assert call_kwargs.get("extra_body") == {"ttl": 60, "context_length": 4096}
 
 
 # ---------------------------------------------------------------------------

@@ -84,8 +84,6 @@ class LMStudioClient:
         extra: dict = {}
         if self.ttl is not None:
             extra["ttl"] = self.ttl
-        if self.context_length is not None:
-            extra["context_length"] = self.context_length
         response = self._openai.chat.completions.create(
             model=self.model_name,
             messages=messages,
