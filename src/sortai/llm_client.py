@@ -7,7 +7,6 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from types import TracebackType
 from typing import Optional
 
 from openai import OpenAI
@@ -28,6 +27,7 @@ class LMStudioClient:
         temperature: float = 0.2,
         max_tokens: int = 2048,
         context_length: Optional[int] = None,
+        ttl: Optional[int] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
@@ -35,6 +35,7 @@ class LMStudioClient:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.context_length = context_length
+        self.ttl = ttl
         self._openai = OpenAI(
             base_url=f"{self.base_url}/v1",
             api_key="lm-studio",
@@ -58,11 +59,9 @@ class LMStudioClient:
             payload: dict = {"model": self.model_name}
             if self.context_length is not None:
                 payload["context_length"] = self.context_length
+            if self.ttl is not None:
+                payload["ttl"] = self.ttl
             self._post_v1("models/load", payload, timeout=300)
-
-    def unload_model(self) -> None:
-        """POST /api/v1/models/unload to release the model from GPU memory."""
-        self._post_v1("models/unload", {"instance_id": self.model_name}, timeout=60)
 
     # ------------------------------------------------------------------
     # Completion
@@ -77,6 +76,9 @@ class LMStudioClient:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
+        extra: dict = {}
+        if self.ttl is not None:
+            extra["ttl"] = self.ttl
         response = self._openai.chat.completions.create(
             model=self.model_name,
             messages=messages,
@@ -90,6 +92,7 @@ class LMStudioClient:
                     "schema": json_schema,
                 },
             },
+            **({"extra_body": extra} if extra else {}),
         )
         content = response.choices[0].message.content or ""
         return LLMResponse(content=content, reasoning="")
@@ -104,6 +107,8 @@ class LMStudioClient:
         }
         if system:
             payload["system_prompt"] = system
+        if self.ttl is not None:
+            payload["ttl"] = self.ttl
 
         response = self._post_v1("chat", payload, timeout=300)
         content = ""
@@ -122,22 +127,6 @@ class LMStudioClient:
     def load_prompt(self, name: str) -> str:
         """Return the contents of prompts/{name}.md."""
         return (self.prompts_dir / f"{name}.md").read_text(encoding="utf-8")
-
-    # ------------------------------------------------------------------
-    # Context manager — auto load/unload
-    # ------------------------------------------------------------------
-
-    def __enter__(self) -> "LMStudioClient":
-        self.load_model()
-        return self
-
-    def __exit__(
-        self,
-        exc_type: Optional[type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        self.unload_model()
 
     # ------------------------------------------------------------------
     # Internal helpers

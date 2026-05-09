@@ -118,7 +118,7 @@ def show_tree(ctx: click.Context) -> None:
 @main.command("ping")
 @click.pass_context
 def ping_lm_studio(ctx: click.Context) -> None:
-    """Test LM Studio connection: load model, send hello, print response, unload."""
+    """Test LM Studio connection: load model, send hello, print response."""
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     from sortai.llm_client import LMStudioClient
 
@@ -129,15 +129,15 @@ def ping_lm_studio(ctx: click.Context) -> None:
         temperature=cfg.lm_studio.temperature,
         max_tokens=cfg.lm_studio.max_tokens,
         context_length=cfg.lm_studio.context_length,
+        ttl=cfg.lm_studio.model_ttl,
     )
 
     try:
         console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
-        with client:
-            console.print("[cyan]Sending hello…[/cyan]")
-            reply = client.complete("Hello! Please respond with a single short sentence.").content
-            console.print(f"\n[bold green]Response:[/bold green] {reply}\n")
-        console.print("[cyan]Model unloaded.[/cyan]")
+        client.load_model()
+        console.print("[cyan]Sending hello…[/cyan]")
+        reply = client.complete("Hello! Please respond with a single short sentence.").content
+        console.print(f"\n[bold green]Response:[/bold green] {reply}\n")
     except RuntimeError as exc:
         console.print(f"\n[bold red]Error:[/bold red] {exc}")
         raise SystemExit(1)
@@ -146,9 +146,8 @@ def ping_lm_studio(ctx: click.Context) -> None:
 @main.command("process")
 @click.argument("pdf_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Print full prompt/response for each LLM call.")
-@click.option("--warm", is_flag=True, default=False, help="Keep model loaded after processing (skips unload).")
 @click.pass_context
-def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -> None:
+def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool) -> None:
     """Run the full LLM pipeline on a single PDF (prints proposed destination)."""
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     from sortai.file_ops import log_decision, log_error, move_file
@@ -162,6 +161,7 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
         temperature=cfg.lm_studio.temperature,
         max_tokens=cfg.lm_studio.max_tokens,
         context_length=cfg.lm_studio.context_length,
+        ttl=cfg.lm_studio.model_ttl,
     )
 
     try:
@@ -173,11 +173,6 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
         pipeline = Pipeline(cfg, client, verbose=verbose)
         console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")
         target_folder, filename, summary, interactions = pipeline.run(pdf_file)
-        if warm:
-            console.print("[cyan]Model kept loaded (--warm).[/cyan]")
-        else:
-            client.unload_model()
-            console.print("[cyan]Model unloaded.[/cyan]")
         if cfg.review_mode:
             from sortai.review_store import ReviewStore, make_review_item
 

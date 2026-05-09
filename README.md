@@ -46,7 +46,7 @@ cp config/config.example.toml config/config.toml
    ```bash
    sortai ping
    ```
-   You should see the model load, a short response from the LLM, and a confirmation that the model was unloaded.
+   You should see the model load and a short response from the LLM.
 
 ### Configuration
 
@@ -64,6 +64,7 @@ base_url    = "http://localhost:1234"
 model       = "your-model-id"
 temperature = 0.2
 max_tokens  = 2048
+# model_ttl = 300                   # seconds of idle time before LM Studio auto-evicts the model
 ```
 
 ## CLI reference
@@ -77,8 +78,8 @@ sortai [--config FILE] [--dry-run] [--review] COMMAND
 | `sortai config` | Print current configuration |
 | `sortai extract PDF_FILE [-n MAX_CHARS]` | Extract and display text from a PDF |
 | `sortai tree` | Print the archive folder tree |
-| `sortai ping` | Test LM Studio connection (load, hello, unload) |
-| `sortai process PDF_FILE [--verbose] [--warm]` | Run the full sort pipeline on a single PDF |
+| `sortai ping` | Test LM Studio connection (load model, send hello) |
+| `sortai process PDF_FILE [--verbose]` | Run the full sort pipeline on a single PDF |
 | `sortai watch [--once] [--verbose]` | Watch inbox and auto-process new PDFs |
 | `sortai dashboard [--port PORT] [--no-browser]` | Start the review dashboard web server |
 | `sortai log [-n N]` | Show recent sort decisions |

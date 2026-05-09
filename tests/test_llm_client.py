@@ -20,7 +20,7 @@ MODEL = "test-model"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_client(tmp_path: Path) -> LMStudioClient:
+def _make_client(tmp_path: Path, ttl: int | None = None) -> LMStudioClient:
     """Return a client that points at a real tmp prompts directory."""
     with patch("sortai.llm_client.OpenAI"):
         client = LMStudioClient(
@@ -29,6 +29,7 @@ def _make_client(tmp_path: Path) -> LMStudioClient:
             prompts_dir=tmp_path,
             temperature=0.3,
             max_tokens=512,
+            ttl=ttl,
         )
     return client
 
@@ -43,7 +44,7 @@ def _fake_urlopen_response(body: bytes = b"{}"):
 
 
 # ---------------------------------------------------------------------------
-# _post_v0 / load_model / unload_model
+# load_model
 # ---------------------------------------------------------------------------
 
 class TestPostV0:
@@ -66,6 +67,34 @@ class TestPostV0:
         assert json.loads(req.data) == {"model": MODEL}
         assert req.get_header("Content-type") == "application/json"
 
+    def test_load_model_includes_ttl_when_set(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path, ttl=300)
+        get_resp = _fake_urlopen_response(b'{"models": []}')
+        post_resp = _fake_urlopen_response(b"{}")
+
+        with patch(
+            "sortai.llm_client.urllib.request.urlopen", side_effect=[get_resp, post_resp]
+        ) as mock_open:
+            client.load_model()
+
+        req = mock_open.call_args[0][0]
+        payload = json.loads(req.data)
+        assert payload.get("ttl") == 300
+
+    def test_load_model_omits_ttl_when_none(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path, ttl=None)
+        get_resp = _fake_urlopen_response(b'{"models": []}')
+        post_resp = _fake_urlopen_response(b"{}")
+
+        with patch(
+            "sortai.llm_client.urllib.request.urlopen", side_effect=[get_resp, post_resp]
+        ) as mock_open:
+            client.load_model()
+
+        req = mock_open.call_args[0][0]
+        payload = json.loads(req.data)
+        assert "ttl" not in payload
+
     def test_load_model_uses_300s_timeout(self, tmp_path: Path) -> None:
         client = _make_client(tmp_path)
         mock_resp = _fake_urlopen_response(b"{}")
@@ -75,27 +104,6 @@ class TestPostV0:
 
         # timeout is passed as a keyword argument to urlopen
         assert mock_open.call_args.kwargs["timeout"] == 300
-
-    def test_unload_model_posts_correct_url_and_payload(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        mock_resp = _fake_urlopen_response(b"{}")
-
-        with patch("sortai.llm_client.urllib.request.urlopen", return_value=mock_resp) as mock_open:
-            client.unload_model()
-
-        req = mock_open.call_args[0][0]
-        assert req.full_url == f"{BASE_URL}/api/v1/models/unload"
-        assert req.get_method() == "POST"
-        assert json.loads(req.data) == {"instance_id": MODEL}
-
-    def test_unload_model_uses_60s_timeout(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        mock_resp = _fake_urlopen_response(b"{}")
-
-        with patch("sortai.llm_client.urllib.request.urlopen", return_value=mock_resp) as mock_open:
-            client.unload_model()
-
-        assert mock_open.call_args.kwargs["timeout"] == 60
 
     def test_http_error_raises_runtime_error(self, tmp_path: Path) -> None:
         client = _make_client(tmp_path)
@@ -257,6 +265,56 @@ class TestComplete:
             api_key="lm-studio",
         )
 
+    def test_complete_includes_ttl_in_payload_when_set(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path, ttl=120)
+        captured: list[dict] = []
+        def capture(endpoint, payload, **kwargs):
+            captured.append(payload)
+            return self._post_response("ok")
+        with patch.object(client, "_post_v1", side_effect=capture):
+            client.complete("test")
+        assert captured[0].get("ttl") == 120
+
+    def test_complete_omits_ttl_when_none(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path, ttl=None)
+        captured: list[dict] = []
+        def capture(endpoint, payload, **kwargs):
+            captured.append(payload)
+            return self._post_response("ok")
+        with patch.object(client, "_post_v1", side_effect=capture):
+            client.complete("test")
+        assert "ttl" not in captured[0]
+
+
+# ---------------------------------------------------------------------------
+# complete_structured() TTL
+# ---------------------------------------------------------------------------
+
+class TestCompleteStructuredTTL:
+    _SCHEMA = {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"], "additionalProperties": False}
+
+    def test_complete_structured_includes_ttl_in_extra_body_when_set(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path, ttl=60)
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = '{"answer": "yes"}'
+        client._openai.chat.completions.create = MagicMock(return_value=mock_response)
+
+        client.complete_structured("prompt", self._SCHEMA)
+
+        call_kwargs = client._openai.chat.completions.create.call_args.kwargs
+        assert call_kwargs.get("extra_body") == {"ttl": 60}
+
+    def test_complete_structured_omits_extra_body_when_ttl_none(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path, ttl=None)
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = '{"answer": "yes"}'
+        client._openai.chat.completions.create = MagicMock(return_value=mock_response)
+
+        client.complete_structured("prompt", self._SCHEMA)
+
+        call_kwargs = client._openai.chat.completions.create.call_args.kwargs
+        assert "extra_body" not in call_kwargs
+
 
 # ---------------------------------------------------------------------------
 # load_prompt()
@@ -284,57 +342,3 @@ class TestLoadPrompt:
             client.load_prompt("nonexistent")
 
 
-# ---------------------------------------------------------------------------
-# Context manager (__enter__ / __exit__)
-# ---------------------------------------------------------------------------
-
-class TestContextManager:
-    def test_enter_calls_load_model(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        client.load_model = MagicMock()
-        client.unload_model = MagicMock()
-
-        with client:
-            pass
-
-        client.load_model.assert_called_once()
-
-    def test_exit_calls_unload_model(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        client.load_model = MagicMock()
-        client.unload_model = MagicMock()
-
-        with client:
-            pass
-
-        client.unload_model.assert_called_once()
-
-    def test_enter_returns_client(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        client.load_model = MagicMock()
-        client.unload_model = MagicMock()
-
-        with client as c:
-            assert c is client
-
-    def test_unload_called_even_if_exception_raised(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        client.load_model = MagicMock()
-        client.unload_model = MagicMock()
-
-        with pytest.raises(ValueError):
-            with client:
-                raise ValueError("boom")
-
-        client.unload_model.assert_called_once()
-
-    def test_load_called_before_body_executes(self, tmp_path: Path) -> None:
-        call_order: list[str] = []
-        client = _make_client(tmp_path)
-        client.load_model = MagicMock(side_effect=lambda: call_order.append("load"))
-        client.unload_model = MagicMock(side_effect=lambda: call_order.append("unload"))
-
-        with client:
-            call_order.append("body")
-
-        assert call_order == ["load", "body", "unload"]

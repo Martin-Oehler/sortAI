@@ -106,8 +106,6 @@ class TestTreeCommand:
 class TestPingCommand:
     def test_ping_exits_zero(self, config_file: Path) -> None:
         mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.complete.return_value = LLMResponse(content="Hello from LM Studio!", reasoning="")
 
         with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
@@ -122,8 +120,6 @@ class TestPingCommand:
 
     def test_ping_prints_response(self, config_file: Path) -> None:
         mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.complete.return_value = LLMResponse(content="Hello from LM Studio!", reasoning="")
 
         with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
@@ -138,8 +134,6 @@ class TestPingCommand:
 
     def test_ping_calls_complete_with_hello_prompt(self, config_file: Path) -> None:
         mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.complete.return_value = LLMResponse(content="Hi!", reasoning="")
 
         with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
@@ -154,13 +148,11 @@ class TestPingCommand:
         call_args = mock_client.complete.call_args[0]
         assert "Hello" in call_args[0]
 
-    def test_ping_uses_context_manager(self, config_file: Path) -> None:
+    def test_ping_calls_load_model(self, config_file: Path) -> None:
         mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.complete.return_value = LLMResponse(content="Hi!", reasoning="")
 
-        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client) as MockClient:
+        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
             runner = CliRunner()
             runner.invoke(
                 main,
@@ -168,5 +160,4 @@ class TestPingCommand:
                 catch_exceptions=False,
             )
 
-        mock_client.__enter__.assert_called_once()
-        mock_client.__exit__.assert_called_once()
+        mock_client.load_model.assert_called_once()

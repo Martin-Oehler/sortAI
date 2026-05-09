@@ -47,6 +47,10 @@ max_tokens = 2048
 # When set, LM Studio loads the model with this context length.
 # context_length = 8192
 
+# Seconds of idle time before LM Studio auto-evicts the model.
+# Omit to rely on LM Studio's server-level default.
+# model_ttl = 300
+
 # Reasoning effort: "off", "low", "medium", "high", or "on".
 # Defaults to the automatically chosen setting for the model. Not all models support this.
 # reasoning = "on"

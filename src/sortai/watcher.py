@@ -135,11 +135,12 @@ class Watcher:
             temperature=self.cfg.lm_studio.temperature,
             max_tokens=self.cfg.lm_studio.max_tokens,
             context_length=self.cfg.lm_studio.context_length,
+            ttl=self.cfg.lm_studio.model_ttl,
         )
         try:
-            with client:
-                pipeline = Pipeline(self.cfg, client, verbose=self.verbose)
-                target_folder, filename, summary, interactions = pipeline.run(pdf_path)
+            client.load_model()
+            pipeline = Pipeline(self.cfg, client, verbose=self.verbose)
+            target_folder, filename, summary, interactions = pipeline.run(pdf_path)
 
             if self.review_mode and self.review_store is not None:
                 self._stage_for_review(pdf_path, target_folder, filename, summary, interactions)

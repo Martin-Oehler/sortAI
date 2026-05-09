@@ -177,16 +177,17 @@ def run_validation(
         temperature=cfg_dry.lm_studio.temperature,
         max_tokens=cfg_dry.lm_studio.max_tokens,
         context_length=cfg_dry.lm_studio.context_length,
+        ttl=cfg_dry.lm_studio.model_ttl,
     )
 
     results: list[ValidationResult] = []
-    with client:
-        pipeline = Pipeline(cfg_dry, client, verbose=verbose)
-        for i, entry in enumerate(test_set["entries"], 1):
-            name = Path(entry["path"]).name
-            console.print(f"[cyan]Validating[/cyan] {i}/{total}: {name}")
-            result = _run_single(entry, archive_root, pipeline)
-            results.append(result)
+    client.load_model()
+    pipeline = Pipeline(cfg_dry, client, verbose=verbose)
+    for i, entry in enumerate(test_set["entries"], 1):
+        name = Path(entry["path"]).name
+        console.print(f"[cyan]Validating[/cyan] {i}/{total}: {name}")
+        result = _run_single(entry, archive_root, pipeline)
+        results.append(result)
 
     return results
 
