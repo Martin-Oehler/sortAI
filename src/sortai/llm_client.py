@@ -59,8 +59,6 @@ class LMStudioClient:
             payload: dict = {"model": self.model_name}
             if self.context_length is not None:
                 payload["context_length"] = self.context_length
-            if self.ttl is not None:
-                payload["ttl"] = self.ttl
             self._post_v1("models/load", payload, timeout=300)
 
     # ------------------------------------------------------------------
@@ -107,8 +105,6 @@ class LMStudioClient:
         }
         if system:
             payload["system_prompt"] = system
-        if self.ttl is not None:
-            payload["ttl"] = self.ttl
 
         response = self._post_v1("chat", payload, timeout=300)
         content = ""

@@ -67,34 +67,6 @@ class TestPostV0:
         assert json.loads(req.data) == {"model": MODEL}
         assert req.get_header("Content-type") == "application/json"
 
-    def test_load_model_includes_ttl_when_set(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path, ttl=300)
-        get_resp = _fake_urlopen_response(b'{"models": []}')
-        post_resp = _fake_urlopen_response(b"{}")
-
-        with patch(
-            "sortai.llm_client.urllib.request.urlopen", side_effect=[get_resp, post_resp]
-        ) as mock_open:
-            client.load_model()
-
-        req = mock_open.call_args[0][0]
-        payload = json.loads(req.data)
-        assert payload.get("ttl") == 300
-
-    def test_load_model_omits_ttl_when_none(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path, ttl=None)
-        get_resp = _fake_urlopen_response(b'{"models": []}')
-        post_resp = _fake_urlopen_response(b"{}")
-
-        with patch(
-            "sortai.llm_client.urllib.request.urlopen", side_effect=[get_resp, post_resp]
-        ) as mock_open:
-            client.load_model()
-
-        req = mock_open.call_args[0][0]
-        payload = json.loads(req.data)
-        assert "ttl" not in payload
-
     def test_load_model_uses_300s_timeout(self, tmp_path: Path) -> None:
         client = _make_client(tmp_path)
         mock_resp = _fake_urlopen_response(b"{}")
@@ -264,26 +236,6 @@ class TestComplete:
             base_url=f"{BASE_URL}/v1",
             api_key="lm-studio",
         )
-
-    def test_complete_includes_ttl_in_payload_when_set(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path, ttl=120)
-        captured: list[dict] = []
-        def capture(endpoint, payload, **kwargs):
-            captured.append(payload)
-            return self._post_response("ok")
-        with patch.object(client, "_post_v1", side_effect=capture):
-            client.complete("test")
-        assert captured[0].get("ttl") == 120
-
-    def test_complete_omits_ttl_when_none(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path, ttl=None)
-        captured: list[dict] = []
-        def capture(endpoint, payload, **kwargs):
-            captured.append(payload)
-            return self._post_response("ok")
-        with patch.object(client, "_post_v1", side_effect=capture):
-            client.complete("test")
-        assert "ttl" not in captured[0]
 
 
 # ---------------------------------------------------------------------------
