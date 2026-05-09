@@ -636,10 +636,11 @@ class TestProcess:
             temperature=cfg.lm_studio.temperature,
             max_tokens=cfg.lm_studio.max_tokens,
             context_length=cfg.lm_studio.context_length,
+            ttl=cfg.lm_studio.model_ttl,
         )
 
-    def test_uses_client_as_context_manager(self, tmp_path: Path):
-        """_process uses LMStudioClient as a context manager (with statement)."""
+    def test_calls_load_model_before_pipeline(self, tmp_path: Path):
+        """_process calls client.load_model() before running the pipeline."""
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(b"%PDF")
         archive = tmp_path / "archive"
@@ -648,8 +649,6 @@ class TestProcess:
         watcher = Watcher(cfg)
 
         client_instance = MagicMock()
-        client_instance.__enter__ = MagicMock(return_value=client_instance)
-        client_instance.__exit__ = MagicMock(return_value=False)
         pipeline_instance = MagicMock()
         pipeline_instance.run.return_value = (archive, "out.pdf", "summary", [])
         move_result = archive / "out.pdf"
@@ -660,8 +659,29 @@ class TestProcess:
              patch(self._PATCH_LOG):
             watcher._process(pdf)
 
-        client_instance.__enter__.assert_called_once()
-        client_instance.__exit__.assert_called_once()
+        client_instance.load_model.assert_called_once()
+
+    def test_never_calls_unload_model(self, tmp_path: Path):
+        """_process never calls unload_model(); TTL handles eviction."""
+        pdf = tmp_path / "doc.pdf"
+        pdf.write_bytes(b"%PDF")
+        archive = tmp_path / "archive"
+        archive.mkdir()
+        cfg = make_cfg(tmp_path, archive=archive)
+        watcher = Watcher(cfg)
+
+        client_instance = MagicMock()
+        pipeline_instance = MagicMock()
+        pipeline_instance.run.return_value = (archive, "out.pdf", "summary", [])
+        move_result = archive / "out.pdf"
+
+        with patch(self._PATCH_CLIENT, return_value=client_instance), \
+             patch(self._PATCH_PIPELINE, return_value=pipeline_instance), \
+             patch(self._PATCH_MOVE, return_value=move_result), \
+             patch(self._PATCH_LOG):
+            watcher._process(pdf)
+
+        client_instance.unload_model.assert_not_called()
 
     def test_runs_pipeline_with_pdf_path(self, tmp_path: Path):
         """_process calls Pipeline.run() with the pdf_path argument."""
@@ -693,8 +713,6 @@ class TestProcess:
         watcher = Watcher(cfg, verbose=True)
 
         client_instance = MagicMock()
-        client_instance.__enter__ = MagicMock(return_value=client_instance)
-        client_instance.__exit__ = MagicMock(return_value=False)
         pipeline_instance = MagicMock()
         pipeline_instance.run.return_value = (archive, "out.pdf", "summary", [])
         move_result = archive / "out.pdf"
@@ -705,7 +723,6 @@ class TestProcess:
              patch(self._PATCH_LOG):
             watcher._process(pdf)
 
-        # Pipeline.__init__ receives cfg, the entered client, and verbose=True
         MockPipeline.assert_called_once_with(cfg, client_instance, verbose=True)
 
     def test_calls_move_file_with_correct_args(self, tmp_path: Path):
@@ -801,8 +818,6 @@ class TestProcess:
         watcher = Watcher(cfg)
 
         client_instance = MagicMock()
-        client_instance.__enter__ = MagicMock(return_value=client_instance)
-        client_instance.__exit__ = MagicMock(return_value=False)
         pipeline_instance = MagicMock()
         pipeline_instance.run.side_effect = RuntimeError("LLM failed")
 
@@ -827,8 +842,6 @@ class TestProcess:
 
         error_msg = "something went badly wrong"
         client_instance = MagicMock()
-        client_instance.__enter__ = MagicMock(return_value=client_instance)
-        client_instance.__exit__ = MagicMock(return_value=False)
         pipeline_instance = MagicMock()
         pipeline_instance.run.side_effect = RuntimeError(error_msg)
 

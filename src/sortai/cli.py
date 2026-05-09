@@ -70,6 +70,7 @@ def show_config(ctx: click.Context) -> None:
     table.add_row("lm_studio.temperature", str(cfg.lm_studio.temperature))
     table.add_row("lm_studio.max_tokens", str(cfg.lm_studio.max_tokens))
     table.add_row("lm_studio.context_length", str(cfg.lm_studio.context_length))
+    table.add_row("lm_studio.model_ttl", str(cfg.lm_studio.model_ttl))
     table.add_row("dashboard.staging_dir", str(cfg.dashboard.staging_dir))
     table.add_row("dashboard.rejected_dir", str(cfg.dashboard.rejected_dir))
     table.add_row("dashboard.port", str(cfg.dashboard.port))
@@ -118,7 +119,7 @@ def show_tree(ctx: click.Context) -> None:
 @main.command("ping")
 @click.pass_context
 def ping_lm_studio(ctx: click.Context) -> None:
-    """Test LM Studio connection: load model, send hello, print response, unload."""
+    """Test LM Studio connection: load model, send hello, print response."""
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     from sortai.llm_client import LMStudioClient
 
@@ -129,15 +130,28 @@ def ping_lm_studio(ctx: click.Context) -> None:
         temperature=cfg.lm_studio.temperature,
         max_tokens=cfg.lm_studio.max_tokens,
         context_length=cfg.lm_studio.context_length,
+        ttl=cfg.lm_studio.model_ttl,
     )
 
+    ping_schema = {
+        "type": "object",
+        "properties": {"message": {"type": "string"}},
+        "required": ["message"],
+        "additionalProperties": False,
+    }
+
     try:
-        console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
-        with client:
-            console.print("[cyan]Sending hello…[/cyan]")
-            reply = client.complete("Hello! Please respond with a single short sentence.").content
-            console.print(f"\n[bold green]Response:[/bold green] {reply}\n")
-        console.print("[cyan]Model unloaded.[/cyan]")
+        if cfg.lm_studio.model_ttl is None:
+            console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
+            client.load_model()
+        console.print("[cyan]Sending hello…[/cyan]")
+        raw = client.complete_structured(
+            'Reply with a single short greeting sentence in JSON, e.g. {"message": "Hello!"}',
+            ping_schema,
+        ).content
+        import json as _json
+        reply = _json.loads(raw).get("message", raw)
+        console.print(f"\n[bold green]Response:[/bold green] {reply}\n")
     except RuntimeError as exc:
         console.print(f"\n[bold red]Error:[/bold red] {exc}")
         raise SystemExit(1)
@@ -146,9 +160,8 @@ def ping_lm_studio(ctx: click.Context) -> None:
 @main.command("process")
 @click.argument("pdf_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Print full prompt/response for each LLM call.")
-@click.option("--warm", is_flag=True, default=False, help="Keep model loaded after processing (skips unload).")
 @click.pass_context
-def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -> None:
+def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool) -> None:
     """Run the full LLM pipeline on a single PDF (prints proposed destination)."""
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     from sortai.file_ops import log_decision, log_error, move_file
@@ -162,22 +175,14 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool, warm: bool) -
         temperature=cfg.lm_studio.temperature,
         max_tokens=cfg.lm_studio.max_tokens,
         context_length=cfg.lm_studio.context_length,
+        ttl=cfg.lm_studio.model_ttl,
     )
 
     try:
-        if client.is_model_loaded():
-            console.print(f"[cyan]Model already loaded:[/cyan] [bold]{cfg.lm_studio.model}[/bold]")
-        else:
-            console.print(f"[cyan]Loading model[/cyan] [bold]{cfg.lm_studio.model}[/bold] …")
         client.load_model()
         pipeline = Pipeline(cfg, client, verbose=verbose)
         console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")
         target_folder, filename, summary, interactions = pipeline.run(pdf_file)
-        if warm:
-            console.print("[cyan]Model kept loaded (--warm).[/cyan]")
-        else:
-            client.unload_model()
-            console.print("[cyan]Model unloaded.[/cyan]")
         if cfg.review_mode:
             from sortai.review_store import ReviewStore, make_review_item
 

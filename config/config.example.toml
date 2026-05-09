@@ -43,9 +43,8 @@ temperature = 0.2
 # Maximum tokens to generate per completion.
 max_tokens = 2048
 
-# Context window size to request when loading the model (in tokens).
-# When set, LM Studio loads the model with this context length.
-# context_length = 8192
+# Seconds after first use before LM Studio auto-evicts the model.
+model_ttl = 300
 
 # Reasoning effort: "off", "low", "medium", "high", or "on".
 # Defaults to the automatically chosen setting for the model. Not all models support this.

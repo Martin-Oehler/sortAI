@@ -262,10 +262,7 @@ class TestRunValidation:
         )
 
     def _make_client_mock(self, tmp_path: Path) -> MagicMock:
-        client = MagicMock()
-        client.__enter__ = MagicMock(return_value=client)
-        client.__exit__ = MagicMock(return_value=False)
-        return client
+        return MagicMock()
 
     def test_processes_all_entries(self, tmp_path: Path):
         archive = tmp_path / "archive"
@@ -310,7 +307,7 @@ class TestRunValidation:
 
         assert captured_cfg[0].dry_run is True
 
-    def test_model_loaded_and_unloaded_once(self, tmp_path: Path):
+    def test_model_loaded_once(self, tmp_path: Path):
         archive = tmp_path / "archive"
         archive.mkdir()
         cfg = make_config(archive)
@@ -326,8 +323,7 @@ class TestRunValidation:
 
             run_validation(test_set, cfg)
 
-        mock_client.__enter__.assert_called_once()
-        mock_client.__exit__.assert_called_once()
+        mock_client.load_model.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -509,8 +505,6 @@ class TestValidateCLI:
         with patch("sortai.validator.LMStudioClient") as MockClient, \
              patch("sortai.validator.Pipeline") as MockPipeline:
             mock_client = MagicMock()
-            mock_client.__enter__ = MagicMock(return_value=mock_client)
-            mock_client.__exit__ = MagicMock(return_value=False)
             MockClient.return_value = mock_client
             mock_pipeline = MagicMock()
             mock_pipeline.run.return_value = (sub, "doc.pdf", "summary", [])
@@ -554,8 +548,6 @@ class TestValidateCLI:
         with patch("sortai.validator.LMStudioClient") as MockClient, \
              patch("sortai.validator.Pipeline") as MockPipeline:
             mock_client = MagicMock()
-            mock_client.__enter__ = MagicMock(return_value=mock_client)
-            mock_client.__exit__ = MagicMock(return_value=False)
             MockClient.return_value = mock_client
             mock_pipeline = MagicMock()
             mock_pipeline.run.return_value = (sub, "doc.pdf", "summary", [fake_interaction])

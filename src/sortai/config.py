@@ -15,6 +15,7 @@ class LMStudioConfig:
     temperature: float = 0.2
     max_tokens: int = 2048
     context_length: Optional[int] = None
+    model_ttl: Optional[int] = None
 
 
 @dataclass
@@ -56,6 +57,7 @@ class Config:
             temperature=lms_raw.get("temperature", 0.2),
             max_tokens=lms_raw.get("max_tokens", 2048),
             context_length=lms_raw.get("context_length", None),
+            model_ttl=lms_raw.get("model_ttl", None),
         )
 
         rv_raw = raw.get("dashboard", {})

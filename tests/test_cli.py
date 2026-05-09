@@ -34,6 +34,24 @@ def config_file(tmp_path: Path) -> Path:
     return cfg
 
 
+@pytest.fixture()
+def config_file_with_ttl(tmp_path: Path) -> Path:
+    cfg = tmp_path / "config_ttl.toml"
+    cfg.write_text(
+        textwrap.dedent(f"""\
+            inbox  = {TEST_INBOX.as_posix()!r}
+            archive = {TEST_ARCHIVE.as_posix()!r}
+            dry_run = true
+
+            [lm_studio]
+            model = "test-model"
+            model_ttl = 300
+        """),
+        encoding="utf-8",
+    )
+    return cfg
+
+
 class TestExtractCommand:
     def test_exits_zero(self, config_file: Path) -> None:
         runner = CliRunner()
@@ -106,9 +124,9 @@ class TestTreeCommand:
 class TestPingCommand:
     def test_ping_exits_zero(self, config_file: Path) -> None:
         mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.complete.return_value = LLMResponse(content="Hello from LM Studio!", reasoning="")
+        mock_client.complete_structured.return_value = LLMResponse(
+            content='{"message": "Hello from LM Studio!"}', reasoning=""
+        )
 
         with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
             runner = CliRunner()
@@ -122,9 +140,9 @@ class TestPingCommand:
 
     def test_ping_prints_response(self, config_file: Path) -> None:
         mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.complete.return_value = LLMResponse(content="Hello from LM Studio!", reasoning="")
+        mock_client.complete_structured.return_value = LLMResponse(
+            content='{"message": "Hello from LM Studio!"}', reasoning=""
+        )
 
         with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
             runner = CliRunner()
@@ -136,11 +154,11 @@ class TestPingCommand:
 
         assert "Hello from LM Studio!" in result.output
 
-    def test_ping_calls_complete_with_hello_prompt(self, config_file: Path) -> None:
+    def test_ping_calls_complete_structured_with_hello_prompt(self, config_file: Path) -> None:
         mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.complete.return_value = LLMResponse(content="Hi!", reasoning="")
+        mock_client.complete_structured.return_value = LLMResponse(
+            content='{"message": "Hi!"}', reasoning=""
+        )
 
         with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
             runner = CliRunner()
@@ -150,17 +168,17 @@ class TestPingCommand:
                 catch_exceptions=False,
             )
 
-        mock_client.complete.assert_called_once()
-        call_args = mock_client.complete.call_args[0]
-        assert "Hello" in call_args[0]
+        mock_client.complete_structured.assert_called_once()
+        call_args = mock_client.complete_structured.call_args[0]
+        assert "greeting" in call_args[0].lower() or "hello" in call_args[0].lower()
 
-    def test_ping_uses_context_manager(self, config_file: Path) -> None:
+    def test_ping_calls_load_model_when_no_ttl(self, config_file: Path) -> None:
         mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.complete.return_value = LLMResponse(content="Hi!", reasoning="")
+        mock_client.complete_structured.return_value = LLMResponse(
+            content='{"message": "Hi!"}', reasoning=""
+        )
 
-        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client) as MockClient:
+        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
             runner = CliRunner()
             runner.invoke(
                 main,
@@ -168,5 +186,20 @@ class TestPingCommand:
                 catch_exceptions=False,
             )
 
-        mock_client.__enter__.assert_called_once()
-        mock_client.__exit__.assert_called_once()
+        mock_client.load_model.assert_called_once()
+
+    def test_ping_skips_load_model_when_ttl_set(self, config_file_with_ttl: Path) -> None:
+        mock_client = MagicMock()
+        mock_client.complete_structured.return_value = LLMResponse(
+            content='{"message": "Hi!"}', reasoning=""
+        )
+
+        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
+            runner = CliRunner()
+            runner.invoke(
+                main,
+                ["--config", str(config_file_with_ttl), "ping"],
+                catch_exceptions=False,
+            )
+
+        mock_client.load_model.assert_not_called()
