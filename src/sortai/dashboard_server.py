@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading as _threading
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -21,6 +22,7 @@ _cfg: "Config | None" = None
 _store: "ReviewStore | None" = None
 _sse_clients: list[asyncio.Queue] = []
 _loop: asyncio.AbstractEventLoop | None = None
+_pipeline_sem: _threading.Semaphore = _threading.Semaphore(1)
 
 
 def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
@@ -212,6 +214,7 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
                 max_tokens=_cfg.lm_studio.max_tokens,  # type: ignore[union-attr]
                 context_length=_cfg.lm_studio.context_length,  # type: ignore[union-attr]
             )
+            _pipeline_sem.acquire()
             try:
                 with client:
                     pipeline = Pipeline(_cfg, client)  # type: ignore[arg-type]
@@ -222,6 +225,8 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
                     _store.mark_pending(original_item_id)  # type: ignore[union-attr]
                     _broadcast("queue_updated")
                 return
+            finally:
+                _pipeline_sem.release()
 
             rel_folder = str(target_folder.relative_to(_cfg.archive))  # type: ignore[union-attr]
             new_item = make_review_item(
