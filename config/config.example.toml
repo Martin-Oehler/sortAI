@@ -44,11 +44,13 @@ temperature = 0.2
 max_tokens = 2048
 
 # Context window size to request when loading the model (in tokens).
-# When set, LM Studio loads the model with this context length.
+# Only effective when model_ttl is NOT set. When model_ttl is set, the model is
+# JIT-loaded by LM Studio and context_length must be configured in LM Studio directly.
 # context_length = 8192
 
-# Seconds of idle time before LM Studio auto-evicts the model.
-# Omit to rely on LM Studio's server-level default.
+# Seconds after first use before LM Studio auto-evicts the model.
+# When set, sortAI skips explicit model loading so that LM Studio's TTL mechanism
+# remains active. context_length must then be configured in LM Studio directly.
 # model_ttl = 300
 
 # Reasoning effort: "off", "low", "medium", "high", or "on".
