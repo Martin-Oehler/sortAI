@@ -64,7 +64,6 @@ base_url    = "http://localhost:1234"
 model       = "your-model-id"
 temperature = 0.2
 max_tokens  = 2048
-# model_ttl = 300                   # seconds of idle time before LM Studio auto-evicts the model
 ```
 
 ## CLI reference
