@@ -47,7 +47,7 @@ def _fake_urlopen_response(body: bytes = b"{}"):
 # load_model
 # ---------------------------------------------------------------------------
 
-class TestPostV0:
+class TestLoadModel:
     def test_load_model_posts_correct_url_and_payload(self, tmp_path: Path) -> None:
         client = _make_client(tmp_path)
         # First call: GET /api/v1/models (is_model_loaded check) → model not present
@@ -109,7 +109,7 @@ class TestPostV0:
         client = _make_client(tmp_path)
 
         http_error = urllib.error.HTTPError(
-            url=f"{BASE_URL}/api/v0/models/load",
+            url=f"{BASE_URL}/api/v1/models/load",
             code=422,
             msg="Unprocessable Entity",
             hdrs=None,  # type: ignore[arg-type]

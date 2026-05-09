@@ -213,12 +213,13 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
                 temperature=_cfg.lm_studio.temperature,  # type: ignore[union-attr]
                 max_tokens=_cfg.lm_studio.max_tokens,  # type: ignore[union-attr]
                 context_length=_cfg.lm_studio.context_length,  # type: ignore[union-attr]
+                ttl=_cfg.lm_studio.model_ttl,  # type: ignore[union-attr]
             )
             _pipeline_sem.acquire()
             try:
-                with client:
-                    pipeline = Pipeline(_cfg, client)  # type: ignore[arg-type]
-                    target_folder, filename, summary, interactions = pipeline.run(staged_path, user_hint=hint)
+                client.load_model()
+                pipeline = Pipeline(_cfg, client)  # type: ignore[arg-type]
+                target_folder, filename, summary, interactions = pipeline.run(staged_path, user_hint=hint)
             except Exception:
                 staged_path.unlink(missing_ok=True)
                 if original_item_id:

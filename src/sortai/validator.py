@@ -159,7 +159,7 @@ def run_validation(
 ) -> list[ValidationResult]:
     """Run the pipeline (always dry-run) on every entry in *test_set*.
 
-    Loads the model once, processes all files, unloads when done.
+    Loads the model once (no-op if TTL is set), processes all files.
     """
     if console is None:
         console = Console()

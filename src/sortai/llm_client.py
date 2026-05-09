@@ -183,8 +183,5 @@ class LMStudioClient:
                 "  2. Click the toggle next to 'Status: Stopped' to start the server."
             ) from exc
 
-    def _post_v0(self, endpoint: str, payload: dict, timeout: int = 60) -> dict:
-        return self._post(f"api/v0/{endpoint}", payload, timeout)
-
     def _post_v1(self, endpoint: str, payload: dict, timeout: int = 60) -> dict:
         return self._post(f"api/v1/{endpoint}", payload, timeout)
