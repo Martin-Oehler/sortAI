@@ -67,6 +67,12 @@ class TestPostV0:
         assert json.loads(req.data) == {"model": MODEL}
         assert req.get_header("Content-type") == "application/json"
 
+    def test_load_model_is_noop_when_ttl_set(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path, ttl=300)
+        with patch("sortai.llm_client.urllib.request.urlopen") as mock_open:
+            client.load_model()
+        mock_open.assert_not_called()
+
     def test_load_model_uses_300s_timeout(self, tmp_path: Path) -> None:
         client = _make_client(tmp_path)
         mock_resp = _fake_urlopen_response(b"{}")
@@ -237,6 +243,29 @@ class TestComplete:
             api_key="lm-studio",
         )
 
+    def test_complete_includes_context_length_when_set(self, tmp_path: Path) -> None:
+        with patch("sortai.llm_client.OpenAI"):
+            client = LMStudioClient(
+                base_url=BASE_URL, model_name=MODEL, prompts_dir=tmp_path, context_length=8192
+            )
+        captured: list[dict] = []
+        def capture(endpoint, payload, **kwargs):
+            captured.append(payload)
+            return self._post_response("ok")
+        with patch.object(client, "_post_v1", side_effect=capture):
+            client.complete("test")
+        assert captured[0].get("context_length") == 8192
+
+    def test_complete_omits_context_length_when_none(self, tmp_path: Path) -> None:
+        client = _make_client(tmp_path)
+        captured: list[dict] = []
+        def capture(endpoint, payload, **kwargs):
+            captured.append(payload)
+            return self._post_response("ok")
+        with patch.object(client, "_post_v1", side_effect=capture):
+            client.complete("test")
+        assert "context_length" not in captured[0]
+
 
 # ---------------------------------------------------------------------------
 # complete_structured() TTL
@@ -266,6 +295,34 @@ class TestCompleteStructuredTTL:
 
         call_kwargs = client._openai.chat.completions.create.call_args.kwargs
         assert "extra_body" not in call_kwargs
+
+    def test_complete_structured_includes_context_length_in_extra_body(self, tmp_path: Path) -> None:
+        with patch("sortai.llm_client.OpenAI"):
+            client = LMStudioClient(
+                base_url=BASE_URL, model_name=MODEL, prompts_dir=tmp_path, context_length=4096
+            )
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = '{"answer": "yes"}'
+        client._openai.chat.completions.create = MagicMock(return_value=mock_response)
+
+        client.complete_structured("prompt", self._SCHEMA)
+
+        call_kwargs = client._openai.chat.completions.create.call_args.kwargs
+        assert call_kwargs.get("extra_body") == {"context_length": 4096}
+
+    def test_complete_structured_includes_both_ttl_and_context_length(self, tmp_path: Path) -> None:
+        with patch("sortai.llm_client.OpenAI"):
+            client = LMStudioClient(
+                base_url=BASE_URL, model_name=MODEL, prompts_dir=tmp_path, ttl=60, context_length=4096
+            )
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = '{"answer": "yes"}'
+        client._openai.chat.completions.create = MagicMock(return_value=mock_response)
+
+        client.complete_structured("prompt", self._SCHEMA)
+
+        call_kwargs = client._openai.chat.completions.create.call_args.kwargs
+        assert call_kwargs.get("extra_body") == {"ttl": 60, "context_length": 4096}
 
 
 # ---------------------------------------------------------------------------

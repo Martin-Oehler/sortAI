@@ -54,7 +54,14 @@ class LMStudioClient:
         return False
 
     def load_model(self) -> None:
-        """POST /api/v1/models/load — no-op if the model is already loaded."""
+        """POST /api/v1/models/load — no-op if TTL is set (use JIT) or model is already loaded.
+
+        LM Studio disables TTL-based auto-eviction for explicitly pre-loaded models,
+        so when TTL is configured we skip the explicit load and let the first completion
+        request trigger JIT loading instead.
+        """
+        if self.ttl is not None:
+            return
         if not self.is_model_loaded():
             payload: dict = {"model": self.model_name}
             if self.context_length is not None:
@@ -77,6 +84,8 @@ class LMStudioClient:
         extra: dict = {}
         if self.ttl is not None:
             extra["ttl"] = self.ttl
+        if self.context_length is not None:
+            extra["context_length"] = self.context_length
         response = self._openai.chat.completions.create(
             model=self.model_name,
             messages=messages,
@@ -105,6 +114,8 @@ class LMStudioClient:
         }
         if system:
             payload["system_prompt"] = system
+        if self.context_length is not None:
+            payload["context_length"] = self.context_length
 
         response = self._post_v1("chat", payload, timeout=300)
         content = ""
