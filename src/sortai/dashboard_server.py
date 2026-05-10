@@ -144,6 +144,60 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
 
         return JSONResponse({"status": "ok"})
 
+    @app.post("/reveal-target")
+    async def reveal_target_folder(request: Request) -> JSONResponse:
+        import platform
+        import subprocess
+
+        data = await request.json()
+        item_type = data.get("type")
+        item_id = data.get("id")
+        log_idx = data.get("log_idx")
+
+        if item_type == "queue":
+            try:
+                item = _store.get(item_id)  # type: ignore[union-attr]
+            except KeyError:
+                raise HTTPException(status_code=404, detail="Item not found")
+            if item.status in ("pending", "reprocessing"):
+                folder = Path(_cfg.archive) / item.proposed_folder  # type: ignore[union-attr]
+            elif item.resolved_path:
+                folder = Path(item.resolved_path).parent
+            else:
+                raise HTTPException(status_code=404, detail="No target path")
+        elif item_type == "log":
+            from sortai.file_ops import load_jsonl_entries
+            entries = load_jsonl_entries(_cfg.log_file)  # type: ignore[union-attr]
+            if log_idx is None or log_idx < 0 or log_idx >= len(entries):
+                raise HTTPException(status_code=404, detail="Log entry not found")
+            entry = entries[log_idx]
+            new_path = entry.get("new_path", "")
+            if not new_path:
+                raise HTTPException(status_code=404, detail="No file path in log entry")
+            folder = Path(new_path).parent
+        else:
+            raise HTTPException(status_code=400, detail="Invalid item type")
+
+        folder = folder.resolve()
+        # Walk up to nearest existing ancestor if the proposed folder doesn't exist yet.
+        while not folder.exists() and folder != folder.parent:
+            folder = folder.parent
+        if not folder.exists():
+            raise HTTPException(status_code=404, detail="Target folder not found on disk")
+
+        system = platform.system()
+        try:
+            if system == "Windows":
+                subprocess.Popen(f'explorer "{folder}"', shell=True)
+            elif system == "Darwin":
+                subprocess.Popen(["open", str(folder)])
+            else:
+                subprocess.Popen(["xdg-open", str(folder)])
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Could not open explorer: {exc}")
+
+        return JSONResponse({"status": "ok"})
+
     @app.post("/api/reprocess")
     async def reprocess_file(request: Request) -> JSONResponse:
         import shutil

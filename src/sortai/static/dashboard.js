@@ -193,6 +193,22 @@ async function revealFromMenu() {
   } catch (e) { showToast('Reveal error: ' + e, true); }
 }
 
+async function revealTargetFromMenu() {
+  const menu = document.getElementById('context-menu');
+  const id = menu.dataset.id;
+  const type = menu.dataset.type;
+  const logIdx = menu.dataset.logIdx;
+  menu.classList.remove('visible');
+  try {
+    const r = await fetch('/reveal-target', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, type, log_idx: logIdx !== '' ? parseInt(logIdx) : null })
+    });
+    if (!r.ok) { const e = await r.json(); showToast('Reveal failed: ' + (e.detail || r.status), true); }
+  } catch (e) { showToast('Reveal error: ' + e, true); }
+}
+
 function retriggerFromMenu() {
   const menu = document.getElementById('context-menu');
   const overlay = document.getElementById('retrigger-overlay');
