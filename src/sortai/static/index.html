@@ -11,6 +11,7 @@
 <div id="header">
   <h1>sortAI Dashboard</h1>
   <span id="pending-badge"></span>
+  <button id="shortcuts-btn" onclick="openShortcutsModal()" title="Keyboard shortcuts (?)">⌨</button>
   <span id="conn-dot" title="Live connection"></span>
 </div>
 
@@ -72,6 +73,30 @@
       <button onclick="retriggerCancel()">Cancel</button>
       <button id="retrigger-submit" onclick="retriggerSubmit()">Re-process</button>
     </div>
+  </div>
+</div>
+
+<!-- Keyboard shortcuts modal -->
+<div id="shortcuts-overlay" onclick="if(event.target===this)closeShortcutsModal()">
+  <div id="shortcuts-modal">
+    <div id="shortcuts-header">
+      <h2>Keyboard Shortcuts</h2>
+      <button id="shortcuts-close" onclick="closeShortcutsModal()" title="Close">✕</button>
+    </div>
+    <table id="shortcuts-table">
+      <tbody>
+        <tr><td><kbd>↓</kbd> / <kbd>j</kbd></td><td>Next entry</td></tr>
+        <tr><td><kbd>↑</kbd> / <kbd>k</kbd></td><td>Previous entry</td></tr>
+        <tr><td><kbd>Y</kbd></td><td>Accept focused item</td></tr>
+        <tr><td><kbd>N</kbd></td><td>Reject focused item</td></tr>
+        <tr><td><kbd>I</kbd></td><td>Inspect LLM interaction</td></tr>
+        <tr><td><kbd>E</kbd></td><td>Reveal in Explorer</td></tr>
+        <tr><td><kbd>T</kbd></td><td>Reveal target folder</td></tr>
+        <tr><td><kbd>R</kbd></td><td>Re-trigger processing</td></tr>
+        <tr><td><kbd>?</kbd></td><td>Show this help</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Close popup / cancel</td></tr>
+      </tbody>
+    </table>
   </div>
 </div>
 

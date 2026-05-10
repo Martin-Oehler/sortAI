@@ -6,7 +6,13 @@
   #header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: 0.02em; }
   #pending-badge { background: #e74c3c; color: #fff; border-radius: 999px; padding: 0.15rem 0.55rem; font-size: 0.75rem; font-weight: 700; display: none; }
   #pending-badge.visible { display: inline-block; }
-  #conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #e74c3c; margin-left: auto; flex-shrink: 0; }
+  #shortcuts-btn {
+    margin-left: auto; background: none; border: 1px solid rgba(255,255,255,0.3);
+    color: #fff; border-radius: 5px; padding: 0.2rem 0.45rem; font-size: 1rem;
+    cursor: pointer; line-height: 1; opacity: 0.75; transition: opacity 0.15s;
+  }
+  #shortcuts-btn:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+  #conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #e74c3c; flex-shrink: 0; }
   #conn-dot.connected { background: #27ae60; }
 
   /* ── Main layout ─────────────────────────────── */
@@ -133,6 +139,35 @@
   }
   #retrigger-submit { background: #4a6cf7; color: #fff; border-color: #4a6cf7; }
   #retrigger-actions button:hover { filter: brightness(0.95); }
+
+  /* ── Keyboard shortcuts modal ───────────────── */
+  #shortcuts-overlay {
+    display: none; position: fixed; inset: 0; z-index: 1500;
+    background: rgba(0,0,0,0.45); align-items: center; justify-content: center;
+  }
+  #shortcuts-overlay.visible { display: flex; }
+  #shortcuts-modal {
+    background: #fff; border-radius: 8px; padding: 1.5rem;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18); width: min(380px, 90vw);
+    display: flex; flex-direction: column; gap: 1rem;
+  }
+  #shortcuts-header { display: flex; align-items: center; justify-content: space-between; }
+  #shortcuts-header h2 { font-size: 1rem; color: #1a1a2e; margin: 0; }
+  #shortcuts-close {
+    background: none; border: none; font-size: 1rem; cursor: pointer;
+    color: #888; padding: 0.1rem 0.3rem; border-radius: 4px;
+  }
+  #shortcuts-close:hover { background: #f0f2f5; color: #1a1a2e; }
+  #shortcuts-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  #shortcuts-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid #eef0f4; }
+  #shortcuts-table tr:last-child td { border-bottom: none; }
+  #shortcuts-table td:first-child { white-space: nowrap; width: 1%; }
+  #shortcuts-table td:last-child { color: #444; }
+  kbd {
+    display: inline-block; background: #f0f2f5; border: 1px solid #ccd;
+    border-radius: 3px; padding: 0.1rem 0.35rem; font-family: inherit;
+    font-size: 0.78rem; color: #1a1a2e; line-height: 1.4;
+  }
 
   /* ── Toast notification ──────────────────────── */
   #toast {

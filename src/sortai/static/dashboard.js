@@ -212,11 +212,18 @@ async function revealTargetFromMenu() {
 
 function retriggerFromMenu() {
   const menu = document.getElementById('context-menu');
-  const overlay = document.getElementById('retrigger-overlay');
-  overlay.dataset.id = menu.dataset.id;
-  overlay.dataset.type = menu.dataset.type;
-  overlay.dataset.logIdx = menu.dataset.logIdx;
+  const id = menu.dataset.id;
+  const type = menu.dataset.type;
+  const logIdx = menu.dataset.logIdx;
   menu.classList.remove('visible');
+  openRetriggerModal(id, type, logIdx);
+}
+
+function openRetriggerModal(id, type, logIdx) {
+  const overlay = document.getElementById('retrigger-overlay');
+  overlay.dataset.id = id;
+  overlay.dataset.type = type;
+  overlay.dataset.logIdx = logIdx ?? '';
   document.getElementById('retrigger-hint').value = '';
   overlay.classList.add('visible');
   document.getElementById('retrigger-hint').focus();
@@ -377,23 +384,39 @@ function allFocusableRows() {
   return [...pending.map(i => ({ id: i.id, type: 'queue' })), ...filteredHistory];
 }
 
+function openShortcutsModal() {
+  document.getElementById('shortcuts-overlay').classList.add('visible');
+}
+
+function closeShortcutsModal() {
+  document.getElementById('shortcuts-overlay').classList.remove('visible');
+}
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.getElementById('retrigger-overlay').classList.remove('visible');
     document.getElementById('context-menu').classList.remove('visible');
+    document.getElementById('shortcuts-overlay').classList.remove('visible');
     return;
   }
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'TEXTAREA') return;
+
+  if (e.key === '?') {
+    openShortcutsModal();
+    e.preventDefault();
+    return;
+  }
+
   const rows = allFocusableRows();
   if (rows.length === 0) return;
   const idx = focusedId ? rows.findIndex(r => r.id === focusedId) : -1;
 
-  if (e.key === 'j' || e.key === 'J') {
+  if (e.key === 'j' || e.key === 'J' || e.key === 'ArrowDown') {
     const next = rows[Math.min(idx + 1, rows.length - 1)];
     selectRow(next.id, next.type);
     scrollToRow(next.id);
     e.preventDefault();
-  } else if (e.key === 'k' || e.key === 'K') {
+  } else if (e.key === 'k' || e.key === 'K' || e.key === 'ArrowUp') {
     const prev = rows[Math.max(idx - 1, 0)];
     selectRow(prev.id, prev.type);
     scrollToRow(prev.id);
@@ -404,6 +427,38 @@ document.addEventListener('keydown', (e) => {
   } else if ((e.key === 'n' || e.key === 'N') && focusedId) {
     const item = queueItems.find(i => i.id === focusedId && i.status === 'pending');
     if (item) rejectItem(focusedId);
+  } else if ((e.key === 'i' || e.key === 'I') && focusedId) {
+    const meta = rows.find(r => r.id === focusedId);
+    if (meta) {
+      if (document.getElementById('llm-panel').classList.contains('visible')) {
+        selectRow(meta.id, meta.type);
+      } else {
+        inspectInteractions(meta.id, meta.type, meta.logIdx ?? null);
+      }
+    }
+  } else if ((e.key === 'e' || e.key === 'E') && focusedId) {
+    const meta = rows.find(r => r.id === focusedId);
+    if (meta) {
+      fetch('/reveal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: meta.id, type: meta.type, log_idx: meta.logIdx ?? null })
+      }).then(r => { if (!r.ok) r.json().then(e => showToast('Reveal failed: ' + (e.detail || r.status), true)); })
+        .catch(e => showToast('Reveal error: ' + e, true));
+    }
+  } else if ((e.key === 't' || e.key === 'T') && focusedId) {
+    const meta = rows.find(r => r.id === focusedId);
+    if (meta) {
+      fetch('/reveal-target', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: meta.id, type: meta.type, log_idx: meta.logIdx ?? null })
+      }).then(r => { if (!r.ok) r.json().then(e => showToast('Reveal failed: ' + (e.detail || r.status), true)); })
+        .catch(e => showToast('Reveal error: ' + e, true));
+    }
+  } else if ((e.key === 'r' || e.key === 'R') && focusedId) {
+    const meta = rows.find(r => r.id === focusedId);
+    if (meta) { e.preventDefault(); openRetriggerModal(meta.id, meta.type, meta.logIdx ?? ''); }
   }
 });
 
