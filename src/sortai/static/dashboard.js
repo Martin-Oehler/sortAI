@@ -173,6 +173,7 @@ function openContextMenu(event, id, type, logIdx) {
   menu.dataset.id = id;
   menu.dataset.type = type;
   menu.dataset.logIdx = logIdx ?? '';
+  menu.querySelector('[onclick="revealTargetFromMenu()"]').style.display = type === 'queue' ? '' : 'none';
   menu.classList.add('visible');
   event.stopPropagation();
 }
@@ -185,6 +186,22 @@ async function revealFromMenu() {
   menu.classList.remove('visible');
   try {
     const r = await fetch('/reveal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, type, log_idx: logIdx !== '' ? parseInt(logIdx) : null })
+    });
+    if (!r.ok) { const e = await r.json(); showToast('Reveal failed: ' + (e.detail || r.status), true); }
+  } catch (e) { showToast('Reveal error: ' + e, true); }
+}
+
+async function revealTargetFromMenu() {
+  const menu = document.getElementById('context-menu');
+  const id = menu.dataset.id;
+  const type = menu.dataset.type;
+  const logIdx = menu.dataset.logIdx;
+  menu.classList.remove('visible');
+  try {
+    const r = await fetch('/reveal-target', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, type, log_idx: logIdx !== '' ? parseInt(logIdx) : null })
