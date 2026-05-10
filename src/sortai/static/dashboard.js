@@ -505,8 +505,9 @@ function relPath(newPath, archiveRoot) {
   const saved = localStorage.getItem('leftPanelWidth');
   if (saved) left.style.width = saved + 'px';
 
-  divider.addEventListener('mousedown', (e) => {
+  divider.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    divider.setPointerCapture(e.pointerId);
     const startX = e.clientX;
     const startWidth = left.offsetWidth;
     divider.classList.add('dragging');
@@ -519,12 +520,14 @@ function relPath(newPath, archiveRoot) {
     function onUp() {
       divider.classList.remove('dragging');
       localStorage.setItem('leftPanelWidth', left.offsetWidth);
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
+      divider.removeEventListener('pointermove', onMove);
+      divider.removeEventListener('pointerup', onUp);
+      divider.removeEventListener('pointercancel', onUp);
     }
 
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    divider.addEventListener('pointermove', onMove);
+    divider.addEventListener('pointerup', onUp);
+    divider.addEventListener('pointercancel', onUp);
   });
 })();
 
