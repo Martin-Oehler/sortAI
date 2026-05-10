@@ -173,6 +173,7 @@ function openContextMenu(event, id, type, logIdx) {
   menu.dataset.id = id;
   menu.dataset.type = type;
   menu.dataset.logIdx = logIdx ?? '';
+  menu.querySelector('[onclick="revealTargetFromMenu()"]').style.display = type === 'queue' ? '' : 'none';
   menu.classList.add('visible');
   event.stopPropagation();
 }
