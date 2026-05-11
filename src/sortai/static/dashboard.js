@@ -368,7 +368,7 @@ async function acceptAll() {
 
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 function allFocusableRows() {
-  const pending = queueItems.filter(i => i.status === 'pending');
+  const pending = queueItems.filter(i => i.status === 'pending' || i.status === 'reprocessing');
   const filter = document.getElementById('filter-select').value;
   const rejected = queueItems.filter(i => i.status === 'rejected')
     .map(i => ({ id: i.id, type: 'queue', timestamp: i.timestamp }));
@@ -520,6 +520,42 @@ function relPath(newPath, archiveRoot) {
     function onUp() {
       divider.classList.remove('dragging');
       localStorage.setItem('leftPanelWidth', left.offsetWidth);
+      divider.removeEventListener('pointermove', onMove);
+      divider.removeEventListener('pointerup', onUp);
+      divider.removeEventListener('pointercancel', onUp);
+    }
+
+    divider.addEventListener('pointermove', onMove);
+    divider.addEventListener('pointerup', onUp);
+    divider.addEventListener('pointercancel', onUp);
+  });
+})();
+
+// ── Draggable left-panel divider (review / history) ───────────────────────
+(function () {
+  const divider = document.getElementById('left-divider');
+  const reviewSection = document.getElementById('review-section');
+  const left = document.getElementById('left');
+
+  const defaultH = 220;
+  const saved = localStorage.getItem('reviewSectionHeight');
+  reviewSection.style.height = (saved ? +saved : defaultH) + 'px';
+
+  divider.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    divider.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startH = reviewSection.offsetHeight;
+    divider.classList.add('dragging');
+
+    function onMove(e) {
+      const h = Math.min(Math.max(startH + e.clientY - startY, 60), left.offsetHeight - 80);
+      reviewSection.style.height = h + 'px';
+    }
+
+    function onUp() {
+      divider.classList.remove('dragging');
+      localStorage.setItem('reviewSectionHeight', reviewSection.offsetHeight);
       divider.removeEventListener('pointermove', onMove);
       divider.removeEventListener('pointerup', onUp);
       divider.removeEventListener('pointercancel', onUp);
