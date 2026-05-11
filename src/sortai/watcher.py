@@ -56,7 +56,15 @@ class Watcher:
             return
         console.print(f"[cyan]Processing {len(pdfs)} existing PDF(s)…[/cyan]")
         for pdf in pdfs:
-            self._process(pdf)
+            worker = threading.Thread(target=self._process, args=(pdf,), daemon=True)
+            worker.start()
+            try:
+                worker.join()
+            except KeyboardInterrupt:
+                console.print("\n[yellow]Interrupted — waiting for current file to finish…[/yellow]")
+                worker.join()
+                console.print("[dim]Stopped.[/dim]")
+                return
 
     def watch(self) -> None:
         """Block until Ctrl-C, processing PDFs as they appear in the inbox."""
