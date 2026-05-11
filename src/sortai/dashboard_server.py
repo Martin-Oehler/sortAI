@@ -256,8 +256,6 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
             else _cfg.inbox.parent / "_review"  # type: ignore[union-attr]
         )
         staging_dir.mkdir(parents=True, exist_ok=True)
-        staged_path = staging_dir / f"{_uuid.uuid4()}_{original_filename}"
-        shutil.copy2(source_path, staged_path)
 
         if original_item_id:
             _store.mark_reprocessing(original_item_id)  # type: ignore[union-attr]
@@ -281,15 +279,20 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
             try:
                 client.load_model()
                 pipeline = Pipeline(_cfg, client)  # type: ignore[arg-type]
-                target_folder, filename, summary, interactions = pipeline.run(staged_path, user_hint=hint)
+                target_folder, filename, summary, interactions = pipeline.run(source_path, user_hint=hint)
             except Exception:
-                staged_path.unlink(missing_ok=True)
                 if original_item_id:
                     _store.mark_pending(original_item_id)  # type: ignore[union-attr]
                     _broadcast("queue_updated")
                 return
             finally:
                 _pipeline_sem.release()
+
+            if source_path.parent.resolve() == staging_dir.resolve():
+                staged_path = source_path
+            else:
+                staged_path = staging_dir / f"{_uuid.uuid4()}_{original_filename}"
+                shutil.move(str(source_path), staged_path)
 
             rel_folder = str(target_folder.relative_to(_cfg.archive))  # type: ignore[union-attr]
             new_item = make_review_item(
