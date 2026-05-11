@@ -17,6 +17,13 @@ if TYPE_CHECKING:
     from sortai.config import Config
     from sortai.review_store import ReviewStore
 
+def _async_exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    exc = context.get("exception")
+    if isinstance(exc, (ConnectionResetError, ConnectionAbortedError)):
+        return  # Windows proactor cleanup noise — peer already closed the socket
+    loop.default_exception_handler(context)
+
+
 # Module-level state set by create_app().
 _cfg: "Config | None" = None
 _store: "ReviewStore | None" = None
@@ -34,6 +41,7 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
     async def lifespan(app: FastAPI):
         global _loop
         _loop = asyncio.get_running_loop()
+        _loop.set_exception_handler(_async_exception_handler)
         observer = _start_file_watcher()
         try:
             yield
@@ -358,23 +366,14 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
         async def generate():
             try:
                 while True:
-                    get_task = asyncio.ensure_future(q.get())
-                    disconnect_task = asyncio.ensure_future(request.is_disconnected())
-                    done, pending = await asyncio.wait(
-                        {get_task, disconnect_task},
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                    for t in pending:
-                        t.cancel()
-                    if disconnect_task in done and disconnect_task.result():
-                        break
-                    if get_task in done:
-                        event = get_task.result()
-                        if event is None:  # shutdown sentinel
-                            break
-                        yield f"event: {event}\ndata: {{}}\n\n"
-                    else:
+                    try:
+                        event = await asyncio.wait_for(q.get(), timeout=30.0)
+                    except asyncio.TimeoutError:
                         yield ": keepalive\n\n"
+                        continue
+                    if event is None:  # shutdown sentinel
+                        break
+                    yield f"event: {event}\ndata: {{}}\n\n"
             finally:
                 if q in _sse_clients:
                     _sse_clients.remove(q)
@@ -468,8 +467,9 @@ def run(cfg: "Config", store: "ReviewStore", port: int, open_browser: bool) -> N
                 for q in list(_sse_clients):
                     await q.put(None)
             try:
-                asyncio.run_coroutine_threadsafe(_close_sse(), _loop)
-            except RuntimeError:
+                fut = asyncio.run_coroutine_threadsafe(_close_sse(), _loop)
+                fut.result(timeout=2.0)
+            except Exception:
                 pass
         _original_handle_exit(sig, frame)
 
