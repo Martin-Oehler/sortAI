@@ -78,8 +78,8 @@ function renderReview() {
          onclick="selectRow('${item.id}', 'queue')">
       ${isReprocessing ? '<span class="spinner"></span>' : '<span class="row-icon">📄</span>'}
       <div class="row-body">
-        <div class="row-filename" title="${esc(item.original_filename)}">${esc(item.original_filename)}</div>
-        <div class="row-dest">→ ${esc(item.proposed_folder)}/${esc(item.proposed_filename)}</div>
+        <div class="row-filename" title="${esc(item.proposed_filename)}">${esc(item.proposed_filename)}</div>
+        <div class="row-dest">→ ${esc(item.proposed_folder)}</div>
         ${isReprocessing
           ? '<span class="reprocessing-label">Re-processing…</span>'
           : `<div class="row-actions">
@@ -102,8 +102,8 @@ function renderHistory() {
       id: i.id,
       type: 'queue',
       timestamp: i.timestamp,
-      filename: i.original_filename,
-      dest: '_rejected/' + i.original_filename,
+      filename: i.proposed_filename,
+      dest: '_rejected',
       status: 'rejected',
       summary: i.summary,
     }));
@@ -113,8 +113,8 @@ function renderHistory() {
     type: 'log',
     logIdx: idx,
     timestamp: e.timestamp || '',
-    filename: basename(e.original_path || ''),
-    dest: e.error ? '' : relPath(e.new_path || '', e.archive_root || ''),
+    filename: basename(e.new_path || e.original_path || ''),
+    dest: e.error ? '' : dirname(relPath(e.new_path || '', e.archive_root || '')),
     status: e.error ? 'error' : 'accepted',
     summary: e.error ? (e.error_reason || '') : (e.summary || ''),
   }));
@@ -487,6 +487,12 @@ function esc(str) {
 
 function basename(p) {
   return p.replace(/\\/g, '/').split('/').pop() || p;
+}
+
+function dirname(p) {
+  const parts = p.replace(/\\/g, '/').split('/');
+  parts.pop();
+  return parts.join('/');
 }
 
 function relPath(newPath, archiveRoot) {
