@@ -135,7 +135,8 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
         else:
             raise HTTPException(status_code=400, detail="Invalid item type")
 
-        path = path.resolve()
+        import os
+        path = Path(os.path.abspath(path))
         if not path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
 
@@ -186,7 +187,8 @@ def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
         else:
             raise HTTPException(status_code=400, detail="Invalid item type")
 
-        folder = folder.resolve()
+        import os
+        folder = Path(os.path.abspath(folder))
         # Walk up to nearest existing ancestor if the proposed folder doesn't exist yet.
         while not folder.exists() and folder != folder.parent:
             folder = folder.parent

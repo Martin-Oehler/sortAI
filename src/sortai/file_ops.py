@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from datetime import datetime
 from html import escape as _esc
@@ -46,9 +47,9 @@ def log_decision(
     """Append a JSON-lines entry to *log_path* and regenerate the HTML report."""
     entry = {
         "timestamp": datetime.now().isoformat(),
-        "original_path": str(src.resolve()),
-        "new_path": str(dest.resolve()),
-        "archive_root": str(archive_root.resolve()) if archive_root else None,
+        "original_path": os.path.abspath(src),
+        "new_path": os.path.abspath(dest),
+        "archive_root": os.path.abspath(archive_root) if archive_root else None,
         "summary": summary,
         "dry_run": dry_run,
         "interactions": interactions or [],
@@ -69,9 +70,9 @@ def log_error(
     """Append a classification-error entry to *log_path* and regenerate the HTML report."""
     entry = {
         "timestamp": datetime.now().isoformat(),
-        "original_path": str(src.resolve()),
+        "original_path": os.path.abspath(src),
         "new_path": "",
-        "archive_root": str(archive_root.resolve()) if archive_root else None,
+        "archive_root": os.path.abspath(archive_root) if archive_root else None,
         "summary": "",
         "dry_run": False,
         "error": True,
