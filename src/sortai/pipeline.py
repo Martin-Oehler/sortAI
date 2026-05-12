@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from pathlib import Path
 from typing import TypedDict
 
@@ -45,9 +46,18 @@ def _truncate(text: str) -> str:
     return text[:_MAX_TEXT_CHARS] + "\n…[truncated]"
 
 
+_CHAR_MAP = {
+    'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
+    'æ': 'ae', 'ø': 'oe', 'å': 'aa',
+}
+
+
 def _sanitize_filename(raw: str) -> str:
-    """Keep only lowercase alphanum/hyphen/underscore; strip leading/trailing junk."""
+    """Transliterate common non-ASCII chars, then keep only lowercase alphanum/hyphen/underscore."""
     name = raw.strip().lower()
+    for char, replacement in _CHAR_MAP.items():
+        name = name.replace(char, replacement)
+    name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
     name = re.sub(r"[^a-z0-9_\-]", "_", name)
     name = re.sub(r"_+", "_", name).strip("_")
     if not name:
@@ -182,7 +192,7 @@ class Pipeline:
             "type": "object",
             "properties": {
                 "reasoning": {"type": "string"},
-                "filename": {"type": "string"},
+                "filename": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
             },
             "required": ["reasoning", "filename"],
             "additionalProperties": False,
