@@ -34,11 +34,13 @@ class Watcher:
         verbose: bool = False,
         review_mode: bool = False,
         review_store: "ReviewStore | None" = None,
+        pipeline_sem: "threading.Semaphore | None" = None,
     ) -> None:
         self.cfg = cfg
         self.verbose = verbose
         self.review_mode = review_mode
         self.review_store = review_store
+        self._pipeline_sem = pipeline_sem
         self._pending: dict[Path, float] = {}
         self._lock = threading.Lock()
         self._queue: queue.Queue[Path] = queue.Queue()
@@ -86,7 +88,7 @@ class Watcher:
         )
 
         try:
-            while observer.is_alive():
+            while observer.is_alive() and not self._stop.is_set():
                 self._flush_pending()
                 time.sleep(0.5)
         except KeyboardInterrupt:
@@ -97,6 +99,10 @@ class Watcher:
             observer.join()
             worker.join()
             console.print("\n[dim]Watcher stopped.[/dim]")
+
+    def stop(self) -> None:
+        """Signal the watcher to stop (can be called from another thread)."""
+        self._stop.set()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -145,6 +151,9 @@ class Watcher:
             context_length=self.cfg.lm_studio.context_length,
             ttl=self.cfg.lm_studio.model_ttl,
         )
+        sem = self._pipeline_sem
+        if sem:
+            sem.acquire()
         try:
             client.load_model()
             pipeline = Pipeline(self.cfg, client, verbose=self.verbose)
@@ -180,6 +189,9 @@ class Watcher:
             )
         except Exception as exc:  # noqa: BLE001
             console.print(f"[bold red]Error processing {pdf_path.name}:[/bold red] {exc}")
+        finally:
+            if sem:
+                sem.release()
 
     def _stage_for_review(
         self,
