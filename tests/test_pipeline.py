@@ -104,6 +104,15 @@ class TestSanitizeFilename:
         result = _sanitize_filename("my.file.pdf")
         assert result == "my_file_pdf.pdf"
 
+    def test_german_umlauts_transliterated(self):
+        assert _sanitize_filename("für_märz") == "fuer_maerz.pdf"
+
+    def test_sharp_s_transliterated(self):
+        assert _sanitize_filename("straße") == "strasse.pdf"
+
+    def test_accented_chars_decomposed(self):
+        assert _sanitize_filename("café") == "cafe.pdf"
+
 
 # ---------------------------------------------------------------------------
 # Pipeline.summarize

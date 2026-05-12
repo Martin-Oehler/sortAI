@@ -11,8 +11,8 @@ Existing files in that folder (for naming consistency):
 Rules for the file name:
 - Use the language of the document
 - Adhere to the naming scheme of other files in the folder. If the folder is empty or naming is inconsistent, stick to these general rules:
-- Use only letters, digits, hyphens `-`, and underscores `_`
-- Use lowercase only
+- Use ASCII characters only: lowercase letters a–z, digits 0–9, hyphens `-`, and underscores `_`
+- No accented or special characters — transliterate them: ä→ae, ö→oe, ü→ue, ß→ss, é→e, ñ→n, etc.
 - Start with a date in `YYYY-MM-DD` format if one is prominent in the document
 - Be concise but descriptive (3–6 words separated by underscores)
 - Do NOT include a file extension — it will be added automatically
