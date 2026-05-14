@@ -16,7 +16,7 @@ from rich.rule import Rule
 from sortai.config import Config
 from sortai.folder_navigator import is_leaf, list_children, list_children_with_info
 from sortai.llm_client import LLMResponse, LMStudioClient
-from sortai.pdf_reader import extract_text
+from sortai.pdf_reader import extract_text, render_pages
 
 
 class ClassificationError(Exception):
@@ -33,6 +33,8 @@ class StageInteraction(TypedDict):
 # Max characters of document text forwarded to the LLM per call.
 _MAX_TEXT_CHARS = 4000
 
+_VISION_PLACEHOLDER = "(See attached PDF page images.)"
+
 
 def _apply_hint(prompt: str, hint: str | None) -> str:
     if hint:
@@ -44,6 +46,13 @@ def _truncate(text: str) -> str:
     if len(text) <= _MAX_TEXT_CHARS:
         return text
     return text[:_MAX_TEXT_CHARS] + "\n…[truncated]"
+
+
+def _apply_document(prompt: str, text: str, images: list[str] | None) -> str:
+    """Replace {{document_text}} with either the vision placeholder or the extracted text."""
+    if images:
+        return prompt.replace("{{document_text}}", _VISION_PLACEHOLDER)
+    return prompt.replace("{{document_text}}", _truncate(text))
 
 
 _CHAR_MAP = {
@@ -81,13 +90,13 @@ class Pipeline:
             self._console.print(Panel(reasoning.strip(), title="[dim]reasoning[/dim]", border_style="yellow"))
         self._console.print(Panel(response.strip(), title="[dim]response[/dim]", border_style="green"))
 
-    def summarize(self, text: str, user_hint: str | None = None) -> tuple[str, list[StageInteraction]]:
+    def summarize(self, text: str, user_hint: str | None = None, images: list[str] | None = None) -> tuple[str, list[StageInteraction]]:
         """Stage 1 — summarize the document text.
 
         Raises ClassificationError if the model determines the content is unclassifiable.
         """
         template = self.client.load_prompt("summarize")
-        prompt = _apply_hint(template.replace("{{document_text}}", _truncate(text)), user_hint)
+        prompt = _apply_hint(_apply_document(template, text, images), user_hint)
         schema = {
             "type": "object",
             "properties": {
@@ -98,7 +107,7 @@ class Pipeline:
             "required": ["can_classify", "summary", "reason"],
             "additionalProperties": False,
         }
-        resp = self.client.complete_structured(prompt, schema)
+        resp = self.client.complete_structured(prompt, schema, images=images)
         parsed = json.loads(resp.content)
         interactions = [StageInteraction(stage="summarize", step=1,
             prompt=prompt, answer=parsed.get("summary", ""), reasoning=parsed.get("reason", ""))]
@@ -113,11 +122,10 @@ class Pipeline:
             raise ClassificationError(parsed.get("reason") or "model refused to classify")
         return parsed["summary"].strip(), interactions
 
-    def navigate_to_folder(self, text: str, summary: str, user_hint: str | None = None) -> tuple[Path, list[StageInteraction]]:
+    def navigate_to_folder(self, text: str, summary: str, user_hint: str | None = None, images: list[str] | None = None) -> tuple[Path, list[StageInteraction]]:
         """Stage 2 — walk the archive tree to find the best target folder."""
         template = self.client.load_prompt("navigate")
         current = self.config.archive
-        short_text = _truncate(text)
         step = 0
         interactions: list[StageInteraction] = []
 
@@ -141,11 +149,14 @@ class Pipeline:
                 listing_lines.append(line)
             folder_listing = "\n".join(listing_lines)
             prompt = _apply_hint(
-                template
-                .replace("{{current_folder}}", str(current))
-                .replace("{{folder_listing}}", folder_listing)
-                .replace("{{summary}}", summary)
-                .replace("{{document_text}}", short_text),
+                _apply_document(
+                    template
+                    .replace("{{current_folder}}", str(current))
+                    .replace("{{folder_listing}}", folder_listing)
+                    .replace("{{summary}}", summary),
+                    text,
+                    images,
+                ),
                 user_hint,
             )
             schema = {
@@ -157,7 +168,7 @@ class Pipeline:
                 "required": ["reasoning", "choice"],
                 "additionalProperties": False,
             }
-            resp = self.client.complete_structured(prompt, schema)
+            resp = self.client.complete_structured(prompt, schema, images=images)
             parsed = json.loads(resp.content)
             choice = parsed["choice"]
             step += 1
@@ -174,18 +185,21 @@ class Pipeline:
 
         return current, interactions
 
-    def choose_filename(self, text: str, summary: str, target: Path, user_hint: str | None = None) -> tuple[str, list[StageInteraction]]:
+    def choose_filename(self, text: str, summary: str, target: Path, user_hint: str | None = None, images: list[str] | None = None) -> tuple[str, list[StageInteraction]]:
         """Stage 3 — pick a sanitised filename (with .pdf extension)."""
         existing = sorted(p.name for p in target.iterdir() if p.is_file()) if target.exists() else []
         existing_files = "\n".join(f"- {f}" for f in existing[:20]) or "(none)"
 
         template = self.client.load_prompt("name_file")
         prompt = _apply_hint(
-            template
-            .replace("{{target_folder}}", str(target))
-            .replace("{{existing_files}}", existing_files)
-            .replace("{{summary}}", summary)
-            .replace("{{document_text}}", _truncate(text)),
+            _apply_document(
+                template
+                .replace("{{target_folder}}", str(target))
+                .replace("{{existing_files}}", existing_files)
+                .replace("{{summary}}", summary),
+                text,
+                images,
+            ),
             user_hint,
         )
         schema = {
@@ -197,7 +211,7 @@ class Pipeline:
             "required": ["reasoning", "filename"],
             "additionalProperties": False,
         }
-        resp = self.client.complete_structured(prompt, schema)
+        resp = self.client.complete_structured(prompt, schema, images=images)
         parsed = json.loads(resp.content)
         raw = parsed["filename"]
         result = _sanitize_filename(raw)
@@ -210,8 +224,13 @@ class Pipeline:
 
     def run(self, pdf_path: Path, user_hint: str | None = None) -> tuple[Path, str, str, list[StageInteraction]]:
         """Run all three stages and return (target_folder, filename, summary, interactions)."""
-        text = extract_text(pdf_path)
-        summary, s1 = self.summarize(text, user_hint)
-        target_folder, s2 = self.navigate_to_folder(text, summary, user_hint)
-        filename, s3 = self.choose_filename(text, summary, target_folder, user_hint)
+        if self.config.lm_studio.use_vision:
+            images = render_pages(pdf_path, self.config.lm_studio.vision_max_pages)
+            text = ""
+        else:
+            images = None
+            text = extract_text(pdf_path)
+        summary, s1 = self.summarize(text, user_hint, images=images)
+        target_folder, s2 = self.navigate_to_folder(text, summary, user_hint, images=images)
+        filename, s3 = self.choose_filename(text, summary, target_folder, user_hint, images=images)
         return target_folder, filename, summary, s1 + s2 + s3

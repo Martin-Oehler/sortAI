@@ -73,13 +73,23 @@ class LMStudioClient:
     # ------------------------------------------------------------------
 
     def complete_structured(
-        self, prompt: str, json_schema: dict, system: Optional[str] = None
+        self,
+        prompt: str,
+        json_schema: dict,
+        system: Optional[str] = None,
+        images: list[str] | None = None,
     ) -> LLMResponse:
         """Chat completion with a JSON schema enforced via structured output."""
         messages: list[dict] = []
         if system:
             messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+        if images:
+            content: list[dict] = [{"type": "text", "text": prompt}]
+            for img_b64 in images:
+                content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}})
+            messages.append({"role": "user", "content": content})
+        else:
+            messages.append({"role": "user", "content": prompt})
 
         extra: dict = {}
         if self.ttl is not None:
