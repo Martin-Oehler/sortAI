@@ -162,16 +162,20 @@ function renderHistory() {
     const iconColor = r.status === 'accepted' ? '#27ae60' : r.status === 'rejected' ? '#e74c3c' : r.status === 'memory' ? '#4a6cf7' : '#e67e22';
     const ts = (r.timestamp || '').slice(0, 16).replace('T', ' ');
     const fileUrl = r.type === 'queue' ? `/files/queue/${r.id}` : `/files/log/${r.logIdx}`;
+    const isMemory = r.status === 'memory';
+    const rowClick = isMemory
+      ? `selectMemoryRow('${r.id}', ${r.logIdx})`
+      : `selectRow('${r.id}', '${r.type}', '${fileUrl}')`;
     return `<div class="row${focusedId === r.id ? ' focused' : ''}"
          id="row-${r.id}"
-         onclick="selectRow('${r.id}', '${r.type}', '${fileUrl}')">
+         onclick="${rowClick}">
       <span class="row-icon" style="color:${iconColor}">${icon}</span>
       <div class="row-body">
         <div class="row-filename" title="${esc(r.filename)}">${esc(r.filename)}</div>
-        <div class="row-dest">${r.status === 'memory' ? '<span style="color:#4a6cf7;font-style:italic">'+esc(r.summary.slice(0,80))+'</span>' : r.dest ? esc(r.dest) : '<span style="color:#e67e22">'+esc(r.summary.slice(0,80))+'</span>'}</div>
+        <div class="row-dest">${isMemory ? '<span style="color:#4a6cf7;font-style:italic">'+esc(r.summary)+'</span>' : r.dest ? esc(r.dest) : '<span style="color:#e67e22">'+esc(r.summary.slice(0,80))+'</span>'}</div>
         <div class="row-summary" style="color:#999">${esc(ts)}</div>
       </div>
-      <button class="row-menu-btn" title="Options" onclick="event.stopPropagation();openContextMenu(event,'${r.id}','${r.type}',${r.type === 'log' ? r.logIdx : 'null'})">⋯</button>
+      ${isMemory ? '' : `<button class="row-menu-btn" title="Options" onclick="event.stopPropagation();openContextMenu(event,'${r.id}','${r.type}',${r.type === 'log' ? r.logIdx : 'null'})">⋯</button>`}
     </div>`;
   }).join('');
 }
@@ -205,6 +209,12 @@ async function deleteMemoryRule(idx) {
 }
 
 // ── Actions ────────────────────────────────────────────────────────────────
+function selectMemoryRow(id, logIdx) {
+  focusedId = id;
+  renderAll();
+  inspectInteractions(id, 'log', logIdx);
+}
+
 function selectRow(id, type, fileUrl) {
   focusedId = id;
   renderAll();
