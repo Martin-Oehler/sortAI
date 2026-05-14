@@ -85,6 +85,32 @@ def log_error(
     render_html_report(log_path)
 
 
+def log_memory_update(
+    original_filename: str,
+    previous_folder: str,
+    new_folder: str,
+    user_hint: str,
+    new_rule: str | None,
+    log_path: Path,
+    interactions: list | None = None,
+) -> None:
+    """Append a memory-update entry to *log_path* and regenerate the HTML report."""
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "type": "memory_update",
+        "original_filename": original_filename,
+        "previous_folder": previous_folder,
+        "new_folder": new_folder,
+        "user_hint": user_hint,
+        "new_rule": new_rule or "",
+        "interactions": interactions or [],
+    }
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    render_html_report(log_path)
+
+
 def load_jsonl_entries(log_path: Path) -> list[dict]:
     """Parse all valid JSON-lines entries from *log_path*, skipping malformed lines."""
     entries: list[dict] = []

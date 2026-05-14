@@ -3,11 +3,12 @@
 // ── State ──────────────────────────────────────────────────────────────────
 let queueItems = [];   // from /api/queue
 let logEntries = [];   // from /api/log
+let memoryRules = [];  // from /api/memory
 let focusedId = null;  // currently focused row id
 
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init() {
-  await Promise.all([fetchQueue(), fetchLog()]);
+  await Promise.all([fetchQueue(), fetchLog(), fetchMemory()]);
   renderAll();
   connectSSE();
   document.getElementById('retrigger-hint').addEventListener('keydown', function(e) {
@@ -33,6 +34,14 @@ async function fetchLog() {
   } catch (e) { console.error('fetchLog', e); }
 }
 
+async function fetchMemory() {
+  try {
+    const r = await fetch('/api/memory');
+    const data = await r.json();
+    memoryRules = data.rules || [];
+  } catch (e) { console.error('fetchMemory', e); }
+}
+
 // ── SSE ────────────────────────────────────────────────────────────────────
 function connectSSE() {
   const es = new EventSource('/api/events');
@@ -43,6 +52,10 @@ function connectSSE() {
   es.addEventListener('log_updated', async () => {
     await fetchLog();
     renderHistory();
+  });
+  es.addEventListener('memory_updated', async () => {
+    await fetchMemory();
+    renderMemory();
   });
   es.onopen = () => document.getElementById('conn-dot').classList.add('connected');
   es.onerror = () => {
@@ -56,6 +69,7 @@ function connectSSE() {
 function renderAll() {
   renderReview();
   renderHistory();
+  renderMemory();
 }
 
 function renderReview() {
@@ -108,16 +122,30 @@ function renderHistory() {
       summary: i.summary,
     }));
 
-  const logged = logEntries.map((e, idx) => ({
-    id: 'log-' + idx,
-    type: 'log',
-    logIdx: idx,
-    timestamp: e.timestamp || '',
-    filename: basename(e.new_path || e.original_path || ''),
-    dest: e.error ? '' : dirname(relPath(e.new_path || '', e.archive_root || '')),
-    status: e.error ? 'error' : 'accepted',
-    summary: e.error ? (e.error_reason || '') : (e.summary || ''),
-  }));
+  const logged = logEntries.map((e, idx) => {
+    if (e.type === 'memory_update') {
+      return {
+        id: 'log-' + idx,
+        type: 'log',
+        logIdx: idx,
+        timestamp: e.timestamp || '',
+        filename: e.original_filename || '',
+        dest: '',
+        status: 'memory',
+        summary: e.new_rule ? ('Learned: ' + e.new_rule) : 'No rule learned',
+      };
+    }
+    return {
+      id: 'log-' + idx,
+      type: 'log',
+      logIdx: idx,
+      timestamp: e.timestamp || '',
+      filename: basename(e.new_path || e.original_path || ''),
+      dest: e.error ? '' : dirname(relPath(e.new_path || '', e.archive_root || '')),
+      status: e.error ? 'error' : 'accepted',
+      summary: e.error ? (e.error_reason || '') : (e.summary || ''),
+    };
+  });
 
   const all = [...rejected, ...logged].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
@@ -130,8 +158,8 @@ function renderHistory() {
   }
 
   list.innerHTML = filtered.map(r => {
-    const icon = r.status === 'accepted' ? '✓' : r.status === 'rejected' ? '✗' : '⚠';
-    const iconColor = r.status === 'accepted' ? '#27ae60' : r.status === 'rejected' ? '#e74c3c' : '#e67e22';
+    const icon = r.status === 'accepted' ? '✓' : r.status === 'rejected' ? '✗' : r.status === 'memory' ? '🧠' : '⚠';
+    const iconColor = r.status === 'accepted' ? '#27ae60' : r.status === 'rejected' ? '#e74c3c' : r.status === 'memory' ? '#4a6cf7' : '#e67e22';
     const ts = (r.timestamp || '').slice(0, 16).replace('T', ' ');
     const fileUrl = r.type === 'queue' ? `/files/queue/${r.id}` : `/files/log/${r.logIdx}`;
     return `<div class="row${focusedId === r.id ? ' focused' : ''}"
@@ -140,12 +168,40 @@ function renderHistory() {
       <span class="row-icon" style="color:${iconColor}">${icon}</span>
       <div class="row-body">
         <div class="row-filename" title="${esc(r.filename)}">${esc(r.filename)}</div>
-        <div class="row-dest">${r.dest ? esc(r.dest) : '<span style="color:#e67e22">'+esc(r.summary.slice(0,80))+'</span>'}</div>
+        <div class="row-dest">${r.status === 'memory' ? '<span style="color:#4a6cf7;font-style:italic">'+esc(r.summary.slice(0,80))+'</span>' : r.dest ? esc(r.dest) : '<span style="color:#e67e22">'+esc(r.summary.slice(0,80))+'</span>'}</div>
         <div class="row-summary" style="color:#999">${esc(ts)}</div>
       </div>
       <button class="row-menu-btn" title="Options" onclick="event.stopPropagation();openContextMenu(event,'${r.id}','${r.type}',${r.type === 'log' ? r.logIdx : 'null'})">⋯</button>
     </div>`;
   }).join('');
+}
+
+function renderMemory() {
+  const list = document.getElementById('memory-list');
+  if (memoryRules.length === 0) {
+    list.innerHTML = '<div id="memory-empty">No rules learned yet.</div>';
+    return;
+  }
+  list.innerHTML = memoryRules.map((rule, idx) => `
+    <div class="memory-rule">
+      <span class="memory-rule-num">${idx + 1}.</span>
+      <span class="memory-rule-text">${esc(rule)}</span>
+      <button class="memory-rule-del" title="Delete rule" onclick="deleteMemoryRule(${idx})">✕</button>
+    </div>`).join('');
+}
+
+async function deleteMemoryRule(idx) {
+  try {
+    const r = await fetch(`/api/memory/${idx}`, { method: 'DELETE' });
+    if (r.ok) {
+      const data = await r.json();
+      memoryRules = data.rules || [];
+      renderMemory();
+    } else {
+      const e = await r.json();
+      showToast('Delete failed: ' + (e.detail || r.status), true);
+    }
+  } catch (e) { showToast('Delete error: ' + e, true); }
 }
 
 // ── Actions ────────────────────────────────────────────────────────────────
@@ -286,8 +342,8 @@ function renderInteractionsHtml(interactions) {
   if (!interactions || interactions.length === 0)
     return '<div class="llm-empty">No LLM interaction data available.</div>';
 
-  const stageOrder = ['summarize', 'navigate', 'choose_filename'];
-  const stageLabels = { summarize: 'Stage 1: Summarize', navigate: 'Stage 2: Navigate to Folder', choose_filename: 'Stage 3: Choose Filename' };
+  const stageOrder = ['summarize', 'navigate', 'choose_filename', 'learn', 'consolidate'];
+  const stageLabels = { summarize: 'Stage 1: Summarize', navigate: 'Stage 2: Navigate to Folder', choose_filename: 'Stage 3: Choose Filename', learn: 'Memory: Learn from Correction', consolidate: 'Memory: Consolidate Rules' };
   const groups = {};
   for (const ix of interactions) {
     (groups[ix.stage] = groups[ix.stage] || []).push(ix);
@@ -562,6 +618,42 @@ function relPath(newPath, archiveRoot) {
     function onUp() {
       divider.classList.remove('dragging');
       localStorage.setItem('reviewSectionHeight', reviewSection.offsetHeight);
+      divider.removeEventListener('pointermove', onMove);
+      divider.removeEventListener('pointerup', onUp);
+      divider.removeEventListener('pointercancel', onUp);
+    }
+
+    divider.addEventListener('pointermove', onMove);
+    divider.addEventListener('pointerup', onUp);
+    divider.addEventListener('pointercancel', onUp);
+  });
+})();
+
+// ── Draggable history/memory divider ──────────────────────────────────────
+(function () {
+  const divider = document.getElementById('left-divider-2');
+  const memorySection = document.getElementById('memory-section');
+  const left = document.getElementById('left');
+
+  const defaultH = 180;
+  const saved = localStorage.getItem('memorySectionHeight');
+  memorySection.style.height = (saved ? +saved : defaultH) + 'px';
+
+  divider.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    divider.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startH = memorySection.offsetHeight;
+    divider.classList.add('dragging');
+
+    function onMove(e) {
+      const h = Math.min(Math.max(startH - (e.clientY - startY), 60), left.offsetHeight - 80);
+      memorySection.style.height = h + 'px';
+    }
+
+    function onUp() {
+      divider.classList.remove('dragging');
+      localStorage.setItem('memorySectionHeight', memorySection.offsetHeight);
       divider.removeEventListener('pointermove', onMove);
       divider.removeEventListener('pointerup', onUp);
       divider.removeEventListener('pointercancel', onUp);

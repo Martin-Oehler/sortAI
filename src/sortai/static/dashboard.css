@@ -183,6 +183,25 @@
   #toast.visible { opacity: 1; }
   #toast.error { background: rgba(200,50,40,0.92); }
 
+  /* ── Memory section ─────────────────────────── */
+  #left-divider-2 { height: 5px; background: #dde; cursor: row-resize; flex-shrink: 0; transition: background 0.1s; border-top: 1px solid #e0e3ea; }
+  #left-divider-2:hover, #left-divider-2.dragging { background: #4a6cf7; }
+  #memory-section { display: flex; flex-direction: column; overflow: hidden; min-height: 60px; height: 180px; flex-shrink: 0; }
+  #memory-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 0.75rem; background: #f0f4ff; border-bottom: 1px solid #d0d8f8; flex-shrink: 0; }
+  #memory-title { font-weight: 700; font-size: 0.8rem; color: #3a56c7; text-transform: uppercase; letter-spacing: 0.05em; flex: 1; }
+  #memory-list { flex: 1; overflow-y: auto; }
+  .memory-rule { display: flex; align-items: flex-start; gap: 0.4rem; padding: 0.45rem 0.75rem; border-bottom: 1px solid #eef0f4; font-size: 0.8rem; color: #333; line-height: 1.45; }
+  .memory-rule-num { color: #4a6cf7; font-weight: 700; flex-shrink: 0; font-size: 0.78rem; min-width: 1.4rem; }
+  .memory-rule-text { flex: 1; }
+  .memory-rule-del {
+    flex-shrink: 0; background: none; border: none; cursor: pointer;
+    color: #bbb; font-size: 0.9rem; padding: 0 0.15rem; line-height: 1;
+    opacity: 0; transition: opacity 0.1s, color 0.1s;
+  }
+  .memory-rule:hover .memory-rule-del { opacity: 1; }
+  .memory-rule-del:hover { color: #e74c3c; }
+  #memory-empty { padding: 0.6rem 0.75rem; color: #888; font-size: 0.8rem; font-style: italic; }
+
   /* ── Right panel (PDF preview) ───────────────── */
   #right { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #e8eaf0; }
   #preview-hint { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; font-size: 0.9rem; }

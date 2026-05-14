@@ -11,6 +11,9 @@ The sub-folders available here are (sub-folder contents and descriptions shown w
 Criteria:
 - If a sending entity is evident, make sure to move it into the folder of that entity if available
 
+**Previously learned classification rules (apply these when relevant):**
+{{memory}}
+
 Based on the document summary, choose ONE of the following options:
 - The name of a sub-folder from the list above (enter that folder next).
 - A single dot `.` if the current folder is already the best destination.
