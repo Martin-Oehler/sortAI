@@ -16,6 +16,8 @@ class LMStudioConfig:
     max_tokens: int = 2048
     context_length: Optional[int] = None
     model_ttl: Optional[int] = None
+    use_vision: bool = False
+    vision_max_pages: int = 5
 
 
 @dataclass
@@ -58,6 +60,8 @@ class Config:
             max_tokens=lms_raw.get("max_tokens", 2048),
             context_length=lms_raw.get("context_length", None),
             model_ttl=lms_raw.get("model_ttl", None),
+            use_vision=lms_raw.get("use_vision", False),
+            vision_max_pages=lms_raw.get("vision_max_pages", 5),
         )
 
         rv_raw = raw.get("dashboard", {})

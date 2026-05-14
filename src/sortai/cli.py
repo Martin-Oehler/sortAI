@@ -71,6 +71,8 @@ def show_config(ctx: click.Context) -> None:
     table.add_row("lm_studio.max_tokens", str(cfg.lm_studio.max_tokens))
     table.add_row("lm_studio.context_length", str(cfg.lm_studio.context_length))
     table.add_row("lm_studio.model_ttl", str(cfg.lm_studio.model_ttl))
+    table.add_row("lm_studio.use_vision", str(cfg.lm_studio.use_vision))
+    table.add_row("lm_studio.vision_max_pages", str(cfg.lm_studio.vision_max_pages))
     table.add_row("dashboard.staging_dir", str(cfg.dashboard.staging_dir))
     table.add_row("dashboard.rejected_dir", str(cfg.dashboard.rejected_dir))
     table.add_row("dashboard.port", str(cfg.dashboard.port))
