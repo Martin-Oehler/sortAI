@@ -354,7 +354,8 @@ def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool, watc
     watcher = None
     if watch_mode:
         from sortai.watcher import Watcher
-        watcher = Watcher(cfg, review_mode=True, review_store=review_store)
+        effective_review = ctx.obj["review_mode"] or cfg.review_mode
+        watcher = Watcher(cfg, review_mode=effective_review, review_store=review_store if effective_review else None)
         console.print(f"[yellow]Watching[/yellow] {cfg.inbox} for new PDFs.")
 
     console.print(
