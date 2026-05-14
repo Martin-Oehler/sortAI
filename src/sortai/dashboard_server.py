@@ -32,22 +32,35 @@ _loop: asyncio.AbstractEventLoop | None = None
 _pipeline_sem: _threading.Semaphore = _threading.Semaphore(1)
 
 
-def create_app(cfg: "Config", store: "ReviewStore") -> FastAPI:
+def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
     global _cfg, _store
     _cfg = cfg
     _store = store
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        import threading
         global _loop
         _loop = asyncio.get_running_loop()
         _loop.set_exception_handler(_async_exception_handler)
         observer = _start_file_watcher()
+
+        watcher_thread = None
+        if watcher is not None:
+            watcher._pipeline_sem = _pipeline_sem
+            watcher_thread = threading.Thread(
+                target=watcher.watch, daemon=True, name="sortai-watcher"
+            )
+            watcher_thread.start()
+
         try:
             yield
         finally:
             observer.stop()
             observer.join(timeout=2)
+            if watcher is not None:
+                watcher.stop()
+                watcher_thread.join(timeout=5)
 
     app = FastAPI(title="sortAI Dashboard", lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -446,12 +459,12 @@ def _broadcast(event_type: str) -> None:
 # ------------------------------------------------------------------
 
 
-def run(cfg: "Config", store: "ReviewStore", port: int, open_browser: bool) -> None:
+def run(cfg: "Config", store: "ReviewStore", port: int, open_browser: bool, watcher=None) -> None:
     import webbrowser
 
     import uvicorn
 
-    app = create_app(cfg, store)
+    app = create_app(cfg, store, watcher=watcher)
 
     if open_browser:
         import threading

@@ -337,8 +337,9 @@ def watch_inbox(ctx: click.Context, once: bool, verbose: bool, review_mode: bool
 @main.command("dashboard")
 @click.option("--port", default=None, type=int, help="Port to listen on (default: from config or 8765).")
 @click.option("--no-browser", is_flag=True, default=False, help="Do not open browser automatically.")
+@click.option("--watch", "watch_mode", is_flag=True, default=False, help="Also watch the inbox for new PDFs.")
 @click.pass_context
-def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool) -> None:
+def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool, watch_mode: bool) -> None:
     """Start the review dashboard web server."""
     from sortai.dashboard_server import run as run_dashboard
     from sortai.review_store import ReviewStore
@@ -350,11 +351,18 @@ def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool) -> N
     effective_port = port if port is not None else cfg.dashboard.port
     open_browser = (not no_browser) and cfg.dashboard.auto_open_browser
 
+    watcher = None
+    if watch_mode:
+        from sortai.watcher import Watcher
+        effective_review = ctx.obj["review_mode"] or cfg.review_mode
+        watcher = Watcher(cfg, review_mode=effective_review, review_store=review_store if effective_review else None)
+        console.print(f"[yellow]Watching[/yellow] {cfg.inbox} for new PDFs.")
+
     console.print(
         f"[bold green]Dashboard[/bold green] starting at "
         f"[cyan]http://localhost:{effective_port}[/cyan] — press Ctrl-C to stop."
     )
-    run_dashboard(cfg, review_store, port=effective_port, open_browser=open_browser)
+    run_dashboard(cfg, review_store, port=effective_port, open_browser=open_browser, watcher=watcher)
 
 
 # ---------------------------------------------------------------------------
