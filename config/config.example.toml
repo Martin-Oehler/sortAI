@@ -46,6 +46,13 @@ max_tokens = 2048
 # Seconds after first use before LM Studio auto-evicts the model.
 model_ttl = 300
 
+# Send PDF pages as images to the model instead of extracted text.
+# Requires a vision-capable model. When false (default), pdfplumber text extraction is used.
+use_vision = false
+
+# Maximum number of PDF pages to render and send when use_vision is true.
+vision_max_pages = 5
+
 # Reasoning effort: "off", "low", "medium", "high", or "on".
 # Defaults to the automatically chosen setting for the model. Not all models support this.
 # reasoning = "on"
