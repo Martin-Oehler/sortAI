@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd LaunchAgent for sortai-dashboard.
+
+  Before installing, replace /Users/youruser/sortAI with the absolute path
+  to your sortAI project folder.
+
+  Install:
+    cp deploy/macos/com.sortai.dashboard.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.sortai.dashboard.plist
+
+  Manage:
+    launchctl start com.sortai.dashboard
+    launchctl stop  com.sortai.dashboard
+    launchctl unload ~/Library/LaunchAgents/com.sortai.dashboard.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sortai.dashboard</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <!-- Replace with the absolute path to your venv's sortai binary -->
+    <string>/Users/youruser/sortAI/.venv/bin/sortai</string>
+    <string>dashboard</string>
+    <string>--watch</string>
+    <string>--no-browser</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <!-- Replace with the absolute path to your sortAI project folder -->
+  <string>/Users/youruser/sortAI</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/youruser/sortAI/logs/dashboard.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/youruser/sortAI/logs/dashboard.log</string>
+</dict>
+</plist>
