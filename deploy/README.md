@@ -17,6 +17,9 @@ Open `windows/sortai-task.xml` and replace both occurrences of `SORTAI_ROOT`
 with the absolute path to your project folder, e.g.
 `C:\Users\you\Documents\git\sortAI`.
 
+> The task uses `powershell.exe` as the wrapper (not `cmd.exe`) so that Task
+> Scheduler's *End Task* reliably kills sortai and all its child processes.
+
 **2. Import the task**
 
 ```bat

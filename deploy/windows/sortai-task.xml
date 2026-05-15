@@ -43,10 +43,10 @@
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>cmd.exe</Command>
+      <Command>powershell.exe</Command>
       <!-- Replace SORTAI_ROOT with the absolute path to your sortAI project folder -->
-      <Arguments>/c "SORTAI_ROOT\deploy\windows\start-sortai.bat"</Arguments>
-      <WorkingDirectory>SORTAI_ROOT</WorkingDirectory>
+      <Arguments>-NonInteractive -ExecutionPolicy Bypass -File "G:\Users\Martin\Documents\git\sortAI\deploy\windows\start-sortai.ps1"</Arguments>
+      <WorkingDirectory>G:\Users\Martin\Documents\git\sortAI\</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
