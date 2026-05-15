@@ -23,6 +23,8 @@ class ReviewItem:
     interactions: list
     status: str  # "pending" | "accepted" | "rejected"
     resolved_path: Optional[str]
+    user_hint: Optional[str] = None
+    previous_proposed_folder: Optional[str] = None
 
 
 def make_review_item(
@@ -32,6 +34,8 @@ def make_review_item(
     proposed_filename: str,
     summary: str,
     interactions: list,
+    user_hint: Optional[str] = None,
+    previous_proposed_folder: Optional[str] = None,
 ) -> ReviewItem:
     return ReviewItem(
         id=str(uuid.uuid4()),
@@ -44,6 +48,8 @@ def make_review_item(
         interactions=interactions,
         status="pending",
         resolved_path=None,
+        user_hint=user_hint,
+        previous_proposed_folder=previous_proposed_folder,
     )
 
 

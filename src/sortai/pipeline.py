@@ -42,6 +42,12 @@ def _apply_hint(prompt: str, hint: str | None) -> str:
     return re.sub(r"[^\n]*\{\{user_hint\}\}[^\n]*\n?", "", prompt)
 
 
+def _apply_memory(prompt: str, memory: str | None) -> str:
+    if memory and memory.strip():
+        return prompt.replace("{{memory}}", memory.strip())
+    return re.sub(r"[^\n]*\{\{memory\}\}[^\n]*\n?", "", prompt)
+
+
 def _truncate(text: str) -> str:
     if len(text) <= _MAX_TEXT_CHARS:
         return text
@@ -129,6 +135,12 @@ class Pipeline:
         step = 0
         interactions: list[StageInteraction] = []
 
+        if self.config.enable_memory:
+            memory_path = self.config.archive / "classification-memory.md"
+            memory = memory_path.read_text(encoding="utf-8") if memory_path.exists() else None
+        else:
+            memory = None
+
         for _ in range(self.config.max_navigate_depth):
             children = list_children(current)
             if not children or is_leaf(current):
@@ -149,13 +161,16 @@ class Pipeline:
                 listing_lines.append(line)
             folder_listing = "\n".join(listing_lines)
             prompt = _apply_hint(
-                _apply_document(
-                    template
-                    .replace("{{current_folder}}", str(current))
-                    .replace("{{folder_listing}}", folder_listing)
-                    .replace("{{summary}}", summary),
-                    text,
-                    images,
+                _apply_memory(
+                    _apply_document(
+                        template
+                        .replace("{{current_folder}}", str(current))
+                        .replace("{{folder_listing}}", folder_listing)
+                        .replace("{{summary}}", summary),
+                        text,
+                        images,
+                    ),
+                    memory,
                 ),
                 user_hint,
             )
@@ -221,6 +236,113 @@ class Pipeline:
             self._log_exchange("Stage 3 — Name file", prompt, raw,
                 reasoning=parsed.get("reasoning", ""))
         return result, interactions
+
+    def learn_from_correction(
+        self,
+        doc_text: str,
+        summary: str,
+        previous_folder: str,
+        user_hint: str,
+        new_folder: str,
+    ) -> tuple[str | None, list[StageInteraction]]:
+        """Ask the LLM whether a user correction yields a generalizable rule.
+
+        Returns (rule, interactions). rule is None if the LLM decides not to learn.
+        """
+        template = self.client.load_prompt("learn")
+        prompt = (
+            _apply_document(template, doc_text, None)
+            .replace("{{previous_folder}}", previous_folder)
+            .replace("{{user_hint}}", user_hint)
+            .replace("{{new_folder}}", new_folder)
+            .replace("{{summary}}", summary)
+        )
+        schema = {
+            "type": "object",
+            "properties": {
+                "reasoning": {"type": "string"},
+                "should_learn": {"type": "boolean"},
+                "rule": {"type": "string"},
+            },
+            "required": ["reasoning", "should_learn", "rule"],
+            "additionalProperties": False,
+        }
+        resp = self.client.complete_structured(prompt, schema)
+        parsed = json.loads(resp.content)
+        rule = parsed["rule"].strip() if parsed["should_learn"] and parsed["rule"].strip() else None
+        reasoning = parsed.get("reasoning", "")
+        interactions = [StageInteraction(
+            stage="learn",
+            step=1,
+            prompt=prompt,
+            answer=parsed["rule"] if rule else "(nothing learned)",
+            reasoning=reasoning,
+        )]
+        if self.verbose:
+            self._log_exchange("Memory — Learn", prompt,
+                rule or "(nothing to learn)", reasoning=reasoning)
+        return rule, interactions
+
+    def consolidate_memory(
+        self,
+        memory_path: Path,
+        new_rule: str,
+    ) -> list[StageInteraction]:
+        """Append new_rule to memory_path, then ask the LLM to consolidate.
+
+        Writes the consolidated memory back and returns the interactions.
+        """
+        existing_rules: list[str] = []
+        if memory_path.exists():
+            raw = memory_path.read_text(encoding="utf-8")
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                m = re.match(r"^\d+\.\s+(.+)$", line)
+                existing_rules.append(m.group(1) if m else line)
+
+        existing_rules.append(new_rule)
+        current_memory = "\n".join(f"{i+1}. {r}" for i, r in enumerate(existing_rules))
+
+        template = self.client.load_prompt("consolidate")
+        prompt = (
+            template
+            .replace("{{new_rule}}", new_rule)
+            .replace("{{current_memory}}", current_memory)
+        )
+        schema = {
+            "type": "object",
+            "properties": {
+                "reasoning": {"type": "string"},
+                "rules": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["reasoning", "rules"],
+            "additionalProperties": False,
+        }
+        resp = self.client.complete_structured(prompt, schema)
+        parsed = json.loads(resp.content)
+        consolidated = [r.strip() for r in parsed["rules"] if r.strip()]
+        reasoning = parsed.get("reasoning", "")
+
+        memory_path.parent.mkdir(parents=True, exist_ok=True)
+        lines = ["# Classification Memory\n"]
+        for i, rule in enumerate(consolidated, 1):
+            lines.append(f"{i}. {rule}")
+        memory_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        interactions = [StageInteraction(
+            stage="consolidate",
+            step=1,
+            prompt=prompt,
+            answer="\n".join(f"{i+1}. {r}" for i, r in enumerate(consolidated)),
+            reasoning=reasoning,
+        )]
+        if self.verbose:
+            self._log_exchange("Memory — Consolidate", prompt,
+                "\n".join(f"{i+1}. {r}" for i, r in enumerate(consolidated)),
+                reasoning=reasoning)
+        return interactions
 
     def run(self, pdf_path: Path, user_hint: str | None = None) -> tuple[Path, str, str, list[StageInteraction]]:
         """Run all three stages and return (target_folder, filename, summary, interactions)."""

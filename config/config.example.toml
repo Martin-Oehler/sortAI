@@ -20,6 +20,11 @@ dry_run = false
 # Use 'sortai dashboard' to approve or reject staged files.
 review_mode = false
 
+# Set to false to disable the persistent learning memory system.
+# When enabled (default), the LLM learns generalizable rules from user corrections
+# and injects them into future classification prompts.
+enable_memory = true
+
 # Maximum folder depth the navigation loop will traverse before stopping.
 max_navigate_depth = 10
 

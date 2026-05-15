@@ -276,6 +276,14 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
             _store.mark_reprocessing(original_item_id)  # type: ignore[union-attr]
             _broadcast("queue_updated")
 
+        original_proposed_folder: str | None = None
+        if original_item_id:
+            try:
+                _original_item = _store.get(original_item_id)  # type: ignore[union-attr]
+                original_proposed_folder = _original_item.proposed_folder
+            except KeyError:
+                pass
+
         def _run_pipeline() -> None:
             from sortai.llm_client import LMStudioClient
             from sortai.pipeline import ClassificationError, Pipeline
@@ -317,6 +325,8 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
                 proposed_filename=filename,
                 summary=summary,
                 interactions=interactions,
+                user_hint=hint if hint else None,
+                previous_proposed_folder=original_proposed_folder,
             )
             if original_item_id:
                 _store.remove(original_item_id)  # type: ignore[union-attr]
@@ -329,6 +339,7 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
 
     @app.post("/api/accept/{item_id}")
     def accept_item(item_id: str) -> JSONResponse:
+        import threading as _t
         _store.reload()  # type: ignore[union-attr]
         try:
             item = _store.get(item_id)  # type: ignore[union-attr]
@@ -352,6 +363,15 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
         )
         _store.mark_accepted(item_id, str(dest))  # type: ignore[union-attr]
         _broadcast("queue_updated")
+
+        if item.user_hint and item.previous_proposed_folder and _cfg.enable_memory:
+            _t.Thread(
+                target=_run_learning,
+                args=(item, str(dest), _cfg),
+                daemon=True,
+                name="sortai-learn",
+            ).start()
+
         return JSONResponse({"status": "accepted", "resolved_path": str(dest)})
 
     @app.post("/api/reject/{item_id}")
@@ -375,6 +395,46 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
         _store.mark_rejected(item_id, str(dest))  # type: ignore[union-attr]
         _broadcast("queue_updated")
         return JSONResponse({"status": "rejected", "resolved_path": str(dest)})
+
+    @app.get("/api/memory")
+    def get_memory() -> JSONResponse:
+        import re as _re
+        memory_path = _cfg.archive / "classification-memory.md"  # type: ignore[union-attr]
+        if not memory_path.exists():
+            return JSONResponse({"rules": []})
+        raw = memory_path.read_text(encoding="utf-8")
+        rules = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            m = _re.match(r"^\d+\.\s+(.+)$", line)
+            rules.append(m.group(1) if m else line)
+        return JSONResponse({"rules": rules})
+
+    @app.delete("/api/memory/{rule_idx}")
+    def delete_memory_rule(rule_idx: int) -> JSONResponse:
+        import re as _re
+        memory_path = _cfg.archive / "classification-memory.md"  # type: ignore[union-attr]
+        if not memory_path.exists():
+            raise HTTPException(status_code=404, detail="No memory file")
+        raw = memory_path.read_text(encoding="utf-8")
+        rules = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            m = _re.match(r"^\d+\.\s+(.+)$", line)
+            rules.append(m.group(1) if m else line)
+        if rule_idx < 0 or rule_idx >= len(rules):
+            raise HTTPException(status_code=404, detail="Rule not found")
+        rules.pop(rule_idx)
+        lines = ["# Classification Memory\n"]
+        for i, rule in enumerate(rules, 1):
+            lines.append(f"{i}. {rule}")
+        memory_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        _broadcast("memory_updated")
+        return JSONResponse({"rules": rules})
 
     @app.get("/api/events")
     async def events(request: Request) -> StreamingResponse:
@@ -452,6 +512,63 @@ def _broadcast(event_type: str) -> None:
             await q.put(event_type)
 
     asyncio.run_coroutine_threadsafe(_push(), _loop)
+
+
+def _run_learning(item, resolved_path: str, cfg) -> None:
+    """Background thread: learn from a user correction, then consolidate memory."""
+    from sortai.file_ops import log_memory_update
+    from sortai.llm_client import LMStudioClient
+    from sortai.pdf_reader import extract_text
+    from sortai.pipeline import Pipeline
+
+    try:
+        doc_text = extract_text(resolved_path)
+    except Exception:
+        doc_text = ""
+
+    client = LMStudioClient(
+        base_url=cfg.lm_studio.base_url,
+        model_name=cfg.lm_studio.model,
+        prompts_dir=cfg.prompts_dir,
+        temperature=cfg.lm_studio.temperature,
+        max_tokens=cfg.lm_studio.max_tokens,
+        context_length=cfg.lm_studio.context_length,
+        ttl=cfg.lm_studio.model_ttl,
+    )
+    _pipeline_sem.acquire()
+    try:
+        client.load_model()
+        pipeline = Pipeline(cfg, client)
+
+        rule, learn_interactions = pipeline.learn_from_correction(
+            doc_text=doc_text,
+            summary=item.summary,
+            previous_folder=item.previous_proposed_folder,
+            user_hint=item.user_hint,
+            new_folder=item.proposed_folder,
+        )
+
+        consolidate_interactions: list = []
+        if rule:
+            memory_path = cfg.archive / "classification-memory.md"
+            consolidate_interactions = pipeline.consolidate_memory(memory_path, rule)
+            _broadcast("memory_updated")
+
+        all_interactions = learn_interactions + consolidate_interactions
+        log_memory_update(
+            original_filename=item.original_filename,
+            previous_folder=item.previous_proposed_folder,
+            new_folder=item.proposed_folder,
+            user_hint=item.user_hint,
+            new_rule=rule,
+            log_path=cfg.log_file,
+            interactions=all_interactions,
+        )
+        _broadcast("log_updated")
+    except Exception:
+        pass
+    finally:
+        _pipeline_sem.release()
 
 
 # ------------------------------------------------------------------
