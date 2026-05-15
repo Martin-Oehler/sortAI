@@ -5,9 +5,10 @@ Documents are placed in the correct folder by an LLM that navigates through the 
 
 A new rule has just been learned from a user correction and added to the memory.
 Review all rules and produce a clean, consolidated list:
-- Merge rules that say the same thing or overlap significantly
-- Resolve contradictions (keep the more specific or more recent one)
-- Remove rules that are too vague or obvious to be useful
+- Extract the core meaning of learned rules, then produce a completely new, consolidated list that maintains these core concepts while:
+    - Merging rules that say the same thing or overlap significantly
+    - Resolving contradictions (prioritize the more recent rule)
+    - Removing rules that are too vague, specific, or obvious to be useful
 - Generalize where multiple specific rules share a common pattern
 - Keep the list under 25 rules
 
@@ -17,5 +18,6 @@ Review all rules and produce a clean, consolidated list:
 **Full memory including the new rule:**
 {{current_memory}}
 
-Reply as JSON: {"rules": ["rule 1", "rule 2", ...]}
-The rules array must contain only plain-English rule strings, without numbering.
+Reply as JSON with these fields in order:
+- `reasoning`: your step-by-step thinking about which rules to merge, drop, or keep
+- `rules`: the consolidated list as an array of plain-English strings, without numbering

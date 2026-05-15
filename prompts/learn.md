@@ -29,5 +29,7 @@ DO learn if:
 
 If you decide to learn, write a concise, general rule in plain English. The rule must be general enough to apply to similar documents in the future, not just this one.
 
-Reply as JSON: {"should_learn": true/false, "rule": "..."}
-If should_learn is false, the rule field may be an empty string.
+Reply as JSON with these fields in order:
+- `reasoning`: your step-by-step thinking before reaching a conclusion
+- `should_learn`: true or false
+- `rule`: the generalizable rule as a plain-English string, or an empty string if should_learn is false

@@ -260,25 +260,27 @@ class Pipeline:
         schema = {
             "type": "object",
             "properties": {
+                "reasoning": {"type": "string"},
                 "should_learn": {"type": "boolean"},
                 "rule": {"type": "string"},
             },
-            "required": ["should_learn", "rule"],
+            "required": ["reasoning", "should_learn", "rule"],
             "additionalProperties": False,
         }
         resp = self.client.complete_structured(prompt, schema)
         parsed = json.loads(resp.content)
         rule = parsed["rule"].strip() if parsed["should_learn"] and parsed["rule"].strip() else None
+        reasoning = parsed.get("reasoning", "")
         interactions = [StageInteraction(
             stage="learn",
             step=1,
             prompt=prompt,
             answer=parsed["rule"] if rule else "(nothing learned)",
-            reasoning=f"should_learn={parsed['should_learn']}",
+            reasoning=reasoning,
         )]
         if self.verbose:
             self._log_exchange("Memory — Learn", prompt,
-                rule or "(nothing to learn)", reasoning=f"should_learn={parsed['should_learn']}")
+                rule or "(nothing to learn)", reasoning=reasoning)
         return rule, interactions
 
     def consolidate_memory(
@@ -312,14 +314,16 @@ class Pipeline:
         schema = {
             "type": "object",
             "properties": {
+                "reasoning": {"type": "string"},
                 "rules": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["rules"],
+            "required": ["reasoning", "rules"],
             "additionalProperties": False,
         }
         resp = self.client.complete_structured(prompt, schema)
         parsed = json.loads(resp.content)
         consolidated = [r.strip() for r in parsed["rules"] if r.strip()]
+        reasoning = parsed.get("reasoning", "")
 
         memory_path.parent.mkdir(parents=True, exist_ok=True)
         lines = ["# Classification Memory\n"]
@@ -332,12 +336,12 @@ class Pipeline:
             step=1,
             prompt=prompt,
             answer="\n".join(f"{i+1}. {r}" for i, r in enumerate(consolidated)),
-            reasoning=f"consolidated {len(existing_rules)} rules → {len(consolidated)}",
+            reasoning=reasoning,
         )]
         if self.verbose:
             self._log_exchange("Memory — Consolidate", prompt,
                 "\n".join(f"{i+1}. {r}" for i, r in enumerate(consolidated)),
-                reasoning=f"consolidated {len(existing_rules)} → {len(consolidated)}")
+                reasoning=reasoning)
         return interactions
 
     def run(self, pdf_path: Path, user_hint: str | None = None) -> tuple[Path, str, str, list[StageInteraction]]:
