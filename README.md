@@ -157,6 +157,42 @@ auto_open_browser = true
 # rejected_dir = "/path/to/_rejected"  # default: inbox parent / "_rejected"
 ```
 
+## Autostart
+
+To run `sortai dashboard --watch --no-browser` automatically on startup, use the platform-specific files in [`deploy/`](deploy/README.md).
+
+### Windows (Task Scheduler — recommended)
+
+1. Open `deploy/windows/sortai-task.xml` and replace the two `SORTAI_ROOT` placeholders with the absolute path to your project folder.
+2. Import the task:
+   ```bat
+   schtasks /Create /XML deploy\windows\sortai-task.xml /TN "sortai-dashboard"
+   ```
+3. The dashboard starts at every logon. Logs go to `logs\dashboard.log`.
+
+> **Headless / multi-user machines**: use `deploy/windows/install-nssm-service.bat` (requires [NSSM](https://nssm.cc/)) to register sortai as a Windows Service that runs even without a logged-in user.
+
+### Linux (systemd user service)
+
+1. Edit `deploy/linux/sortai.service` — replace `/home/youruser/sortAI` with your project path.
+2. Install and enable:
+   ```bash
+   mkdir -p ~/.config/systemd/user
+   cp deploy/linux/sortai.service ~/.config/systemd/user/
+   systemctl --user enable --now sortai
+   ```
+
+### macOS (launchd LaunchAgent)
+
+1. Edit `deploy/macos/com.sortai.dashboard.plist` — replace `/Users/youruser/sortAI` (three occurrences) with your project path.
+2. Load the agent:
+   ```bash
+   cp deploy/macos/com.sortai.dashboard.plist ~/Library/LaunchAgents/
+   launchctl load ~/Library/LaunchAgents/com.sortai.dashboard.plist
+   ```
+
+See [`deploy/README.md`](deploy/README.md) for full instructions, management commands, and troubleshooting tips.
+
 ## Validation
 
 The `validate` commands let you measure how well sortAI sorts documents by comparing its decisions against your existing archive layout.

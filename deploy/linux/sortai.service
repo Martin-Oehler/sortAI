@@ -1,0 +1,17 @@
+[Unit]
+Description=sortAI dashboard with inbox watcher
+After=network.target
+
+[Service]
+Type=simple
+# Replace /home/youruser/sortAI with the absolute path to your sortAI project folder.
+WorkingDirectory=/home/youruser/sortAI
+ExecStart=/home/youruser/sortAI/.venv/bin/sortai dashboard --watch --no-browser
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=append:/home/youruser/sortAI/logs/dashboard.log
+StandardError=append:/home/youruser/sortAI/logs/dashboard.log
+
+[Install]
+WantedBy=default.target
