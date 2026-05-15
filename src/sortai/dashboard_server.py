@@ -364,7 +364,7 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
         _store.mark_accepted(item_id, str(dest))  # type: ignore[union-attr]
         _broadcast("queue_updated")
 
-        if item.user_hint and item.previous_proposed_folder:
+        if item.user_hint and item.previous_proposed_folder and _cfg.enable_memory:
             _t.Thread(
                 target=_run_learning,
                 args=(item, str(dest), _cfg),

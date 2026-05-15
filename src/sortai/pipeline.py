@@ -135,8 +135,11 @@ class Pipeline:
         step = 0
         interactions: list[StageInteraction] = []
 
-        memory_path = self.config.archive / "classification-memory.md"
-        memory = memory_path.read_text(encoding="utf-8") if memory_path.exists() else None
+        if self.config.enable_memory:
+            memory_path = self.config.archive / "classification-memory.md"
+            memory = memory_path.read_text(encoding="utf-8") if memory_path.exists() else None
+        else:
+            memory = None
 
         for _ in range(self.config.max_navigate_depth):
             children = list_children(current)
