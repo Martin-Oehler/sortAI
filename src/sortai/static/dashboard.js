@@ -384,15 +384,24 @@ document.addEventListener('click', () => {
 });
 
 function _nextPendingId(currentId) {
-  const rows = allFocusableRows();
-  const idx = rows.findIndex(r => r.id === currentId);
+  const pending = queueItems
+    .filter(i => i.status === 'pending' || i.status === 'reprocessing')
+    .map(i => i.id);
+  const idx = pending.indexOf(currentId);
   if (idx === -1) return null;
-  const candidate = rows[idx + 1] ?? rows[idx - 1] ?? null;
-  return candidate && candidate.type === 'queue' ? candidate.id : null;
+  return pending[idx + 1] ?? pending[idx - 1] ?? null;
 }
 
 function _focusNext(nextId) {
-  if (!nextId) return;
+  if (!nextId) {
+    focusedId = null;
+    renderAll();
+    const frame = document.getElementById('pdf-frame');
+    const hint = document.getElementById('preview-hint');
+    frame.classList.remove('visible');
+    hint.style.display = '';
+    return;
+  }
   const stillPending = queueItems.find(i => i.id === nextId && i.status === 'pending');
   if (stillPending) {
     selectRow(nextId, 'queue');
