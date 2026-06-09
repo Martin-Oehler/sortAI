@@ -4,8 +4,12 @@
   Import via:  schtasks /Create /XML deploy\windows\sortai-task.xml /TN "sortai-dashboard"
   Or:          Task Scheduler GUI -> Action -> Import Task...
 
-  Before importing, replace SORTAI_ROOT below with the absolute path to your
-  sortAI project folder (e.g. C:\Users\you\Documents\git\sortAI).
+  Before importing, replace every occurrence of SORTAI_ROOT with the absolute path
+  to your sortAI project folder (e.g. C:\Users\you\Documents\git\sortAI).
+
+  Uses python.exe with Hidden=true so Task Scheduler creates a hidden console —
+  no window appears, stdout/stderr work normally, and "End Task" terminates the process directly.
+  The 60-second logon delay gives mapped network drives time to reconnect.
 -->
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
@@ -14,6 +18,8 @@
   <Triggers>
     <LogonTrigger>
       <Enabled>true</Enabled>
+      <!-- Delay gives mapped network drives time to reconnect before sortai validates paths -->
+      <Delay>PT60S</Delay>
     </LogonTrigger>
   </Triggers>
   <Principals>
@@ -36,17 +42,19 @@
     </IdleSettings>
     <AllowStartOnDemand>true</AllowStartOnDemand>
     <Enabled>true</Enabled>
-    <Hidden>false</Hidden>
+    <Hidden>true</Hidden>
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
     <Priority>7</Priority>
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>powershell.exe</Command>
-      <!-- Replace SORTAI_ROOT with the absolute path to your sortAI project folder -->
-      <Arguments>-NonInteractive -ExecutionPolicy Bypass -File "G:\Users\Martin\Documents\git\sortAI\deploy\windows\start-sortai.ps1"</Arguments>
-      <WorkingDirectory>G:\Users\Martin\Documents\git\sortAI\</WorkingDirectory>
+      <!-- python.exe with Hidden=true: Task Scheduler creates a hidden console — no window,
+           stdout/stderr work normally, End Task kills the process directly.
+           Replace SORTAI_ROOT with the absolute path to your sortAI project folder. -->
+      <Command>SORTAI_ROOT</Command>
+      <Arguments>-m sortai dashboard --watch --no-browser</Arguments>
+      <WorkingDirectory>SORTAI_ROOT</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
