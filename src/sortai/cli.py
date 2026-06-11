@@ -184,12 +184,10 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool) -> None:
         if cfg.review_mode:
             from sortai.review_store import ReviewStore, make_review_item
 
-            staging_dir = cfg.dashboard.staging_dir or cfg.inbox.parent / "_review"
-            queue_path = cfg.log_file.parent / "review_queue.json"
-            review_store = ReviewStore(queue_path)
+            review_store = ReviewStore(cfg.queue_path)
             staged = move_file(
                 src=pdf_file.resolve(),
-                dest_dir=staging_dir,
+                dest_dir=cfg.staging_dir,
                 new_name=pdf_file.name,
                 dry_run=cfg.dry_run,
             )
@@ -224,8 +222,7 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool) -> None:
             )
             label = "[dim](dry run)[/dim] " if cfg.dry_run else ""
             console.print(f"\n[bold green]->[/bold green] {label}{dest}")
-            html_path = cfg.log_file.with_name(cfg.log_file.stem + "_report.html")
-            console.print(f"[dim]Report: {html_path}[/dim]\n")
+            console.print(f"[dim]Report: {cfg.report_path}[/dim]\n")
     except ClassificationError as exc:
         console.print(f"\n[yellow]Cannot classify:[/yellow] {exc}")
         log_error(
@@ -301,8 +298,7 @@ def generate_report(ctx: click.Context) -> None:
         raise SystemExit(1)
 
     render_html_report(log_path)
-    html_path = log_path.with_name(log_path.stem + "_report.html")
-    console.print(f"[bold green]Report written:[/bold green] {html_path}")
+    console.print(f"[bold green]Report written:[/bold green] {cfg.report_path}")
 
 
 @main.command("watch")
@@ -320,9 +316,8 @@ def watch_inbox(ctx: click.Context, once: bool, verbose: bool, review_mode: bool
     effective_review = review_mode or cfg.review_mode
     review_store = None
     if effective_review:
-        queue_path = cfg.log_file.parent / "review_queue.json"
-        review_store = ReviewStore(queue_path)
-        console.print(f"[yellow]Review mode:[/yellow] files will be staged for approval. Queue: {queue_path}")
+        review_store = ReviewStore(cfg.queue_path)
+        console.print(f"[yellow]Review mode:[/yellow] files will be staged for approval. Queue: {cfg.queue_path}")
 
     watcher = Watcher(cfg, verbose=verbose, review_mode=effective_review, review_store=review_store)
 
@@ -343,8 +338,7 @@ def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool, watc
     from sortai.review_store import ReviewStore
 
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
-    queue_path = cfg.log_file.parent / "review_queue.json"
-    review_store = ReviewStore(queue_path)
+    review_store = ReviewStore(cfg.queue_path)
 
     effective_port = port if port is not None else cfg.dashboard.port
     open_browser = (not no_browser) and cfg.dashboard.auto_open_browser

@@ -265,11 +265,7 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
         if not source_path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
 
-        staging_dir = (
-            _cfg.dashboard.staging_dir  # type: ignore[union-attr]
-            if _cfg.dashboard.staging_dir  # type: ignore[union-attr]
-            else _cfg.inbox.parent / "_review"  # type: ignore[union-attr]
-        )
+        staging_dir = _cfg.staging_dir  # type: ignore[union-attr]
         staging_dir.mkdir(parents=True, exist_ok=True)
 
         if original_item_id:
@@ -385,13 +381,8 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
             raise HTTPException(status_code=400, detail="Item is not pending")
 
         from sortai.file_ops import move_file
-        rejected_dir = (
-            _cfg.dashboard.rejected_dir  # type: ignore[union-attr]
-            if _cfg.dashboard.rejected_dir  # type: ignore[union-attr]
-            else _cfg.inbox.parent / "_rejected"  # type: ignore[union-attr]
-        )
         src = Path(item.staging_path)
-        dest = move_file(src=src, dest_dir=rejected_dir, new_name=item.original_filename, dry_run=False)
+        dest = move_file(src=src, dest_dir=_cfg.rejected_dir, new_name=item.original_filename, dry_run=False)  # type: ignore[union-attr]
         _store.mark_rejected(item_id, str(dest))  # type: ignore[union-attr]
         _broadcast("queue_updated")
         return JSONResponse({"status": "rejected", "resolved_path": str(dest)})
@@ -399,7 +390,7 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
     @app.get("/api/memory")
     def get_memory() -> JSONResponse:
         import re as _re
-        memory_path = _cfg.archive / "classification-memory.md"  # type: ignore[union-attr]
+        memory_path = _cfg.memory_path  # type: ignore[union-attr]
         if not memory_path.exists():
             return JSONResponse({"rules": []})
         raw = memory_path.read_text(encoding="utf-8")
@@ -415,7 +406,7 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
     @app.delete("/api/memory/{rule_idx}")
     def delete_memory_rule(rule_idx: int) -> JSONResponse:
         import re as _re
-        memory_path = _cfg.archive / "classification-memory.md"  # type: ignore[union-attr]
+        memory_path = _cfg.memory_path  # type: ignore[union-attr]
         if not memory_path.exists():
             raise HTTPException(status_code=404, detail="No memory file")
         raw = memory_path.read_text(encoding="utf-8")
@@ -482,7 +473,7 @@ def _start_file_watcher():
             name = Path(path).name
             if name == _cfg.log_file.name:  # type: ignore[union-attr]
                 _broadcast("log_updated")
-            elif name == "review_queue.json":
+            elif name == _cfg.queue_path.name:  # type: ignore[union-attr]
                 _broadcast("queue_updated")
 
         def on_modified(self, event) -> None:  # type: ignore[override]
@@ -550,8 +541,7 @@ def _run_learning(item, resolved_path: str, cfg) -> None:
 
         consolidate_interactions: list = []
         if rule:
-            memory_path = cfg.archive / "classification-memory.md"
-            consolidate_interactions = pipeline.consolidate_memory(memory_path, rule)
+            consolidate_interactions = pipeline.consolidate_memory(cfg.memory_path, rule)
             _broadcast("memory_updated")
 
         all_interactions = learn_interactions + consolidate_interactions

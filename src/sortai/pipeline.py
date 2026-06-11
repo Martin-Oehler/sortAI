@@ -136,7 +136,7 @@ class Pipeline:
         interactions: list[StageInteraction] = []
 
         if self.config.enable_memory:
-            memory_path = self.config.archive / "classification-memory.md"
+            memory_path = self.config.memory_path
             memory = memory_path.read_text(encoding="utf-8") if memory_path.exists() else None
         else:
             memory = None

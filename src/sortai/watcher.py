@@ -203,14 +203,9 @@ class Watcher:
     ) -> None:
         from sortai.review_store import make_review_item
 
-        staging_dir = (
-            self.cfg.dashboard.staging_dir
-            if self.cfg.dashboard.staging_dir
-            else self.cfg.inbox.parent / "_review"
-        )
         staged = move_file(
             src=pdf_path.resolve(),
-            dest_dir=staging_dir,
+            dest_dir=self.cfg.staging_dir,
             new_name=pdf_path.name,
             dry_run=self.cfg.dry_run,
         )
