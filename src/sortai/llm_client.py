@@ -112,29 +112,6 @@ class LMStudioClient:
         content = response.choices[0].message.content or ""
         return LLMResponse(content=content, reasoning="")
 
-    def complete(self, prompt: str, system: Optional[str] = None) -> LLMResponse:
-        """Single-turn chat completion; no conversation history kept."""
-        payload: dict = {
-            "model": self.model_name,
-            "input": prompt,
-            "temperature": self.temperature,
-            "max_output_tokens": self.max_tokens,
-        }
-        if system:
-            payload["system_prompt"] = system
-        if self.context_length is not None:
-            payload["context_length"] = self.context_length
-
-        response = self._post_v1("chat", payload, timeout=300)
-        content = ""
-        reasoning = ""
-        for item in response.get("output", []):
-            if item.get("type") == "message":
-                content = item.get("content", "")
-            elif item.get("type") == "reasoning":
-                reasoning = item.get("content", "")
-        return LLMResponse(content=content, reasoning=reasoning)
-
     # ------------------------------------------------------------------
     # Prompt loading
     # ------------------------------------------------------------------

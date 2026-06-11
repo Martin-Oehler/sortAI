@@ -81,10 +81,6 @@ def show_config(ctx: click.Context) -> None:
     console.print(table)
 
 
-# ---------------------------------------------------------------------------
-# Stub commands — to be implemented in later phases
-# ---------------------------------------------------------------------------
-
 @main.command("extract")
 @click.argument("pdf_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("-n", "max_chars", default=500, show_default=True, help="Max characters of extracted text to display.")
