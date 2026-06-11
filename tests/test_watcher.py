@@ -571,11 +571,13 @@ class TestWorker:
 # ---------------------------------------------------------------------------
 
 class TestProcess:
-    # Convenience: patches for all external collaborators used in _process
+    # Convenience: patches for all external collaborators used in _process.
+    # The client is built in the watcher; the rest live in the shared
+    # processor service that _process delegates to.
     _PATCH_CLIENT = "sortai.watcher.LMStudioClient.from_config"
-    _PATCH_PIPELINE = "sortai.watcher.Pipeline"
-    _PATCH_MOVE = "sortai.watcher.move_file"
-    _PATCH_LOG = "sortai.watcher.log_decision"
+    _PATCH_PIPELINE = "sortai.processor.Pipeline"
+    _PATCH_MOVE = "sortai.processor.move_file"
+    _PATCH_LOG = "sortai.processor.log_decision"
 
     def _make_pipeline_mock(self, target: Path, filename: str, summary: str):
         """Return a Pipeline mock whose run() returns the given tuple."""
@@ -693,7 +695,7 @@ class TestProcess:
              patch(self._PATCH_LOG):
             watcher._process(pdf)
 
-        pipeline_instance.run.assert_called_once_with(pdf)
+        pipeline_instance.run.assert_called_once_with(pdf, user_hint=None)
 
     def test_constructs_pipeline_with_cfg_client_verbose(self, tmp_path: Path):
         """Pipeline is constructed with (cfg, client, verbose=watcher.verbose)."""

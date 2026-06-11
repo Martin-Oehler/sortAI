@@ -154,71 +154,41 @@ def ping_lm_studio(ctx: click.Context) -> None:
 def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool) -> None:
     """Run the full LLM pipeline on a single PDF (prints proposed destination)."""
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
-    from sortai.file_ops import log_decision, log_error, move_file
     from sortai.llm_client import LMStudioClient
-    from sortai.pipeline import ClassificationError, Pipeline
+    from sortai.processor import process_document
 
     client = LMStudioClient.from_config(cfg)
 
-    try:
-        client.load_model()
-        pipeline = Pipeline(cfg, client, verbose=verbose)
-        console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")
-        target_folder, filename, summary, interactions = pipeline.run(pdf_file)
-        if cfg.review_mode:
-            from sortai.review_store import ReviewStore, make_review_item
+    review_store = None
+    if cfg.review_mode:
+        from sortai.review_store import ReviewStore
 
-            review_store = ReviewStore(cfg.queue_path)
-            staged = move_file(
-                src=pdf_file.resolve(),
-                dest_dir=cfg.staging_dir,
-                new_name=pdf_file.name,
-                dry_run=cfg.dry_run,
-            )
-            if not cfg.dry_run:
-                proposed_folder = target_folder.relative_to(cfg.archive).as_posix()
-                item = make_review_item(
-                    original_filename=pdf_file.name,
-                    staging_path=staged,
-                    proposed_folder=proposed_folder,
-                    proposed_filename=filename,
-                    summary=summary,
-                    interactions=interactions,
-                )
-                review_store.add(item)
-            label = "[dim](dry run)[/dim] " if cfg.dry_run else ""
-            console.print(f"[yellow]⚠ Staged for review:[/yellow] {label}{pdf_file.name} → [dim]{staged}[/dim]")
-        else:
-            dest = move_file(
-                src=pdf_file.resolve(),
-                dest_dir=target_folder,
-                new_name=filename,
-                dry_run=cfg.dry_run,
-            )
-            log_decision(
-                src=pdf_file.resolve(),
-                dest=dest,
-                summary=summary,
-                dry_run=cfg.dry_run,
-                log_path=cfg.log_file,
-                archive_root=cfg.archive,
-                interactions=interactions,
-            )
-            label = "[dim](dry run)[/dim] " if cfg.dry_run else ""
-            console.print(f"\n[bold green]->[/bold green] {label}{dest}")
-            console.print(f"[dim]Report: {cfg.report_path}[/dim]\n")
-    except ClassificationError as exc:
-        console.print(f"\n[yellow]Cannot classify:[/yellow] {exc}")
-        log_error(
-            src=pdf_file.resolve(),
-            reason=str(exc),
-            log_path=cfg.log_file,
-            archive_root=cfg.archive,
+        review_store = ReviewStore(cfg.queue_path)
+
+    try:
+        console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")
+        outcome = process_document(
+            cfg,
+            client,
+            pdf_file,
+            review_store=review_store,
+            verbose=verbose,
         )
-        raise SystemExit(2)
     except RuntimeError as exc:
         console.print(f"\n[bold red]Error:[/bold red] {exc}")
         raise SystemExit(1)
+
+    label = "[dim](dry run)[/dim] " if outcome.dry_run else ""
+    if outcome.status == "error":
+        console.print(f"\n[yellow]Cannot classify:[/yellow] {outcome.error_reason}")
+        raise SystemExit(2)
+    if outcome.status == "staged":
+        console.print(
+            f"[yellow]⚠ Staged for review:[/yellow] {label}{pdf_file.name} → [dim]{outcome.final_path}[/dim]"
+        )
+    else:
+        console.print(f"\n[bold green]->[/bold green] {label}{outcome.final_path}")
+        console.print(f"[dim]Report: {cfg.report_path}[/dim]\n")
 
 
 @main.command("log")

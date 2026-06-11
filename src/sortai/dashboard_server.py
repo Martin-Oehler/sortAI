@@ -223,9 +223,7 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
 
     @app.post("/api/reprocess")
     async def reprocess_file(request: Request) -> JSONResponse:
-        import shutil
         import threading
-        import uuid as _uuid
 
         data = await request.json()
         item_type = data.get("type")
@@ -265,9 +263,6 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
         if not source_path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
 
-        staging_dir = _cfg.staging_dir  # type: ignore[union-attr]
-        staging_dir.mkdir(parents=True, exist_ok=True)
-
         if original_item_id:
             _store.mark_reprocessing(original_item_id)  # type: ignore[union-attr]
             _broadcast("queue_updated")
@@ -282,43 +277,31 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
 
         def _run_pipeline() -> None:
             from sortai.llm_client import LMStudioClient
-            from sortai.pipeline import ClassificationError, Pipeline
-            from sortai.review_store import make_review_item
+            from sortai.processor import process_document
 
             client = LMStudioClient.from_config(_cfg)  # type: ignore[arg-type]
-            _pipeline_sem.acquire()
             try:
-                client.load_model()
-                pipeline = Pipeline(_cfg, client)  # type: ignore[arg-type]
-                target_folder, filename, summary, interactions = pipeline.run(source_path, user_hint=hint)
+                outcome = process_document(
+                    _cfg,  # type: ignore[arg-type]
+                    client,
+                    source_path,
+                    review_store=_store,
+                    user_hint=hint,
+                    pipeline_sem=_pipeline_sem,
+                    dry_run=False,
+                    original_filename=original_filename,
+                    previous_proposed_folder=original_proposed_folder,
+                )
             except Exception:
+                outcome = None
+            if outcome is None or outcome.status == "error":
                 if original_item_id:
                     _store.mark_pending(original_item_id)  # type: ignore[union-attr]
                     _broadcast("queue_updated")
                 return
-            finally:
-                _pipeline_sem.release()
 
-            if source_path.parent.resolve() == staging_dir.resolve():
-                staged_path = source_path
-            else:
-                staged_path = staging_dir / f"{_uuid.uuid4()}_{original_filename}"
-                shutil.move(str(source_path), staged_path)
-
-            rel_folder = str(target_folder.relative_to(_cfg.archive))  # type: ignore[union-attr]
-            new_item = make_review_item(
-                original_filename=original_filename,
-                staging_path=staged_path,
-                proposed_folder=rel_folder,
-                proposed_filename=filename,
-                summary=summary,
-                interactions=interactions,
-                user_hint=hint if hint else None,
-                previous_proposed_folder=original_proposed_folder,
-            )
             if original_item_id:
                 _store.remove(original_item_id)  # type: ignore[union-attr]
-            _store.add(new_item)  # type: ignore[union-attr]
             _broadcast("queue_updated")
 
         threading.Thread(target=_run_pipeline, daemon=True).start()

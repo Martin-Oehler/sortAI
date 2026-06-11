@@ -12,9 +12,8 @@ from typing import TYPE_CHECKING
 from rich.console import Console
 
 from sortai.config import Config
-from sortai.file_ops import log_decision, log_error, move_file
 from sortai.llm_client import LMStudioClient
-from sortai.pipeline import ClassificationError, Pipeline
+from sortai.processor import process_document
 
 if TYPE_CHECKING:
     from sortai.review_store import ReviewStore
@@ -143,80 +142,30 @@ class Watcher:
 
         console.print(f"[cyan]Processing[/cyan] {pdf_path.name} …")
         client = LMStudioClient.from_config(self.cfg)
-        sem = self._pipeline_sem
-        if sem:
-            sem.acquire()
+        review_store = self.review_store if self.review_mode else None
         try:
-            client.load_model()
-            pipeline = Pipeline(self.cfg, client, verbose=self.verbose)
-            target_folder, filename, summary, interactions = pipeline.run(pdf_path)
-
-            if self.review_mode and self.review_store is not None:
-                self._stage_for_review(pdf_path, target_folder, filename, summary, interactions)
-            else:
-                dest = move_file(
-                    src=pdf_path.resolve(),
-                    dest_dir=target_folder,
-                    new_name=filename,
-                    dry_run=self.cfg.dry_run,
-                )
-                log_decision(
-                    src=pdf_path.resolve(),
-                    dest=dest,
-                    summary=summary,
-                    dry_run=self.cfg.dry_run,
-                    log_path=self.cfg.log_file,
-                    archive_root=self.cfg.archive,
-                    interactions=interactions,
-                )
-                label = "[dim](dry run)[/dim] " if self.cfg.dry_run else ""
-                console.print(f"[bold green]→[/bold green] {label}{dest}")
-        except ClassificationError as exc:
-            console.print(f"[yellow]Cannot classify {pdf_path.name}:[/yellow] {exc}")
-            log_error(
-                src=pdf_path.resolve(),
-                reason=str(exc),
-                log_path=self.cfg.log_file,
-                archive_root=self.cfg.archive,
+            outcome = process_document(
+                self.cfg,
+                client,
+                pdf_path,
+                review_store=review_store,
+                verbose=self.verbose,
+                pipeline_sem=self._pipeline_sem,
             )
         except Exception as exc:  # noqa: BLE001
             console.print(f"[bold red]Error processing {pdf_path.name}:[/bold red] {exc}")
-        finally:
-            if sem:
-                sem.release()
+            return
 
-    def _stage_for_review(
-        self,
-        pdf_path: Path,
-        target_folder: Path,
-        filename: str,
-        summary: str,
-        interactions: list,
-    ) -> None:
-        from sortai.review_store import make_review_item
-
-        staged = move_file(
-            src=pdf_path.resolve(),
-            dest_dir=self.cfg.staging_dir,
-            new_name=pdf_path.name,
-            dry_run=self.cfg.dry_run,
-        )
-        proposed_folder = target_folder.relative_to(self.cfg.archive).as_posix()
-        if not self.cfg.dry_run:
-            item = make_review_item(
-                original_filename=pdf_path.name,
-                staging_path=staged,
-                proposed_folder=proposed_folder,
-                proposed_filename=filename,
-                summary=summary,
-                interactions=interactions,
+        label = "[dim](dry run)[/dim] " if outcome.dry_run else ""
+        if outcome.status == "error":
+            console.print(f"[yellow]Cannot classify {pdf_path.name}:[/yellow] {outcome.error_reason}")
+        elif outcome.status == "staged":
+            console.print(
+                f"[yellow]⚠ Staged for review:[/yellow] {label}{pdf_path.name} "
+                f"→ [dim]{outcome.final_path}[/dim]"
             )
-            self.review_store.add(item)  # type: ignore[union-attr]
-        label = "[dim](dry run)[/dim] " if self.cfg.dry_run else ""
-        console.print(
-            f"[yellow]⚠ Staged for review:[/yellow] {label}{pdf_path.name} "
-            f"→ [dim]{staged}[/dim]"
-        )
+        else:
+            console.print(f"[bold green]→[/bold green] {label}{outcome.final_path}")
 
 
 class _PDFHandler:
