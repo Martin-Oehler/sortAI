@@ -7,9 +7,12 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from openai import OpenAI
+
+if TYPE_CHECKING:
+    from sortai.config import Config
 
 
 @dataclass(slots=True)
@@ -39,6 +42,19 @@ class LMStudioClient:
         self._openai = OpenAI(
             base_url=f"{self.base_url}/v1",
             api_key="lm-studio",
+        )
+
+    @classmethod
+    def from_config(cls, cfg: "Config") -> "LMStudioClient":
+        """Build a client from a Config object (single place that maps config → client params)."""
+        return cls(
+            base_url=cfg.lm_studio.base_url,
+            model_name=cfg.lm_studio.model,
+            prompts_dir=cfg.prompts_dir,
+            temperature=cfg.lm_studio.temperature,
+            max_tokens=cfg.lm_studio.max_tokens,
+            context_length=cfg.lm_studio.context_length,
+            ttl=cfg.lm_studio.model_ttl,
         )
 
     # ------------------------------------------------------------------

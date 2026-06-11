@@ -142,15 +142,7 @@ class Watcher:
             return
 
         console.print(f"[cyan]Processing[/cyan] {pdf_path.name} …")
-        client = LMStudioClient(
-            base_url=self.cfg.lm_studio.base_url,
-            model_name=self.cfg.lm_studio.model,
-            prompts_dir=self.cfg.prompts_dir,
-            temperature=self.cfg.lm_studio.temperature,
-            max_tokens=self.cfg.lm_studio.max_tokens,
-            context_length=self.cfg.lm_studio.context_length,
-            ttl=self.cfg.lm_studio.model_ttl,
-        )
+        client = LMStudioClient.from_config(self.cfg)
         sem = self._pipeline_sem
         if sem:
             sem.acquire()

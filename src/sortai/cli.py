@@ -121,15 +121,7 @@ def ping_lm_studio(ctx: click.Context) -> None:
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     from sortai.llm_client import LMStudioClient
 
-    client = LMStudioClient(
-        base_url=cfg.lm_studio.base_url,
-        model_name=cfg.lm_studio.model,
-        prompts_dir=cfg.prompts_dir,
-        temperature=cfg.lm_studio.temperature,
-        max_tokens=cfg.lm_studio.max_tokens,
-        context_length=cfg.lm_studio.context_length,
-        ttl=cfg.lm_studio.model_ttl,
-    )
+    client = LMStudioClient.from_config(cfg)
 
     ping_schema = {
         "type": "object",
@@ -166,15 +158,7 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool) -> None:
     from sortai.llm_client import LMStudioClient
     from sortai.pipeline import ClassificationError, Pipeline
 
-    client = LMStudioClient(
-        base_url=cfg.lm_studio.base_url,
-        model_name=cfg.lm_studio.model,
-        prompts_dir=cfg.prompts_dir,
-        temperature=cfg.lm_studio.temperature,
-        max_tokens=cfg.lm_studio.max_tokens,
-        context_length=cfg.lm_studio.context_length,
-        ttl=cfg.lm_studio.model_ttl,
-    )
+    client = LMStudioClient.from_config(cfg)
 
     try:
         client.load_model()

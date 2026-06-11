@@ -572,7 +572,7 @@ class TestWorker:
 
 class TestProcess:
     # Convenience: patches for all external collaborators used in _process
-    _PATCH_CLIENT = "sortai.watcher.LMStudioClient"
+    _PATCH_CLIENT = "sortai.watcher.LMStudioClient.from_config"
     _PATCH_PIPELINE = "sortai.watcher.Pipeline"
     _PATCH_MOVE = "sortai.watcher.move_file"
     _PATCH_LOG = "sortai.watcher.log_decision"
@@ -612,7 +612,7 @@ class TestProcess:
         assert "kipping" in combined  # "Skipping" or "[yellow]Skipping..."
 
     def test_creates_lm_studio_client_with_config_values(self, tmp_path: Path):
-        """_process instantiates LMStudioClient with the correct config fields."""
+        """_process builds the LMStudioClient from the watcher's config."""
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(b"%PDF")
         archive = tmp_path / "archive"
@@ -629,15 +629,7 @@ class TestProcess:
              patch(self._PATCH_LOG):
             watcher._process(pdf)
 
-        MockClient.assert_called_once_with(
-            base_url=cfg.lm_studio.base_url,
-            model_name=cfg.lm_studio.model,
-            prompts_dir=cfg.prompts_dir,
-            temperature=cfg.lm_studio.temperature,
-            max_tokens=cfg.lm_studio.max_tokens,
-            context_length=cfg.lm_studio.context_length,
-            ttl=cfg.lm_studio.model_ttl,
-        )
+        MockClient.assert_called_once_with(cfg)
 
     def test_calls_load_model_before_pipeline(self, tmp_path: Path):
         """_process calls client.load_model() before running the pipeline."""

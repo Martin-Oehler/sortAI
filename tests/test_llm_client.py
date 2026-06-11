@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from sortai.config import Config, LMStudioConfig
 from sortai.llm_client import LMStudioClient
 
 
@@ -147,6 +148,65 @@ class TestLoadModel:
 
         req = mock_open.call_args[0][0]
         assert "//" not in req.full_url.replace("http://", "")
+
+
+# ---------------------------------------------------------------------------
+# from_config factory
+# ---------------------------------------------------------------------------
+
+class TestFromConfig:
+    def _make_config(self, tmp_path: Path, **lms_overrides) -> Config:
+        lms = LMStudioConfig(
+            base_url="http://example.local:9999",
+            model="factory-model",
+            temperature=0.7,
+            max_tokens=1234,
+            context_length=8192,
+            model_ttl=120,
+        )
+        for key, value in lms_overrides.items():
+            setattr(lms, key, value)
+        return Config(
+            inbox=tmp_path / "inbox",
+            archive=tmp_path / "archive",
+            prompts_dir=tmp_path / "prompts",
+            lm_studio=lms,
+        )
+
+    def test_fields_match_config_values(self, tmp_path: Path) -> None:
+        cfg = self._make_config(tmp_path)
+
+        with patch("sortai.llm_client.OpenAI"):
+            client = LMStudioClient.from_config(cfg)
+
+        assert client.base_url == "http://example.local:9999"
+        assert client.model_name == "factory-model"
+        assert client.prompts_dir == tmp_path / "prompts"
+        assert client.temperature == 0.7
+        assert client.max_tokens == 1234
+        assert client.context_length == 8192
+        assert client.ttl == 120
+
+    def test_none_optionals_pass_through(self, tmp_path: Path) -> None:
+        cfg = self._make_config(tmp_path, context_length=None, model_ttl=None)
+
+        with patch("sortai.llm_client.OpenAI"):
+            client = LMStudioClient.from_config(cfg)
+
+        assert client.context_length is None
+        assert client.ttl is None
+
+    def test_returns_lm_studio_client_instance(self, tmp_path: Path) -> None:
+        cfg = self._make_config(tmp_path)
+
+        with patch("sortai.llm_client.OpenAI") as MockOpenAI:
+            client = LMStudioClient.from_config(cfg)
+
+        assert isinstance(client, LMStudioClient)
+        MockOpenAI.assert_called_once_with(
+            base_url="http://example.local:9999/v1",
+            api_key="lm-studio",
+        )
 
 
 # ---------------------------------------------------------------------------

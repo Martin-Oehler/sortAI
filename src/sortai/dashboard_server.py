@@ -285,15 +285,7 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
             from sortai.pipeline import ClassificationError, Pipeline
             from sortai.review_store import make_review_item
 
-            client = LMStudioClient(
-                base_url=_cfg.lm_studio.base_url,  # type: ignore[union-attr]
-                model_name=_cfg.lm_studio.model,  # type: ignore[union-attr]
-                prompts_dir=_cfg.prompts_dir,  # type: ignore[union-attr]
-                temperature=_cfg.lm_studio.temperature,  # type: ignore[union-attr]
-                max_tokens=_cfg.lm_studio.max_tokens,  # type: ignore[union-attr]
-                context_length=_cfg.lm_studio.context_length,  # type: ignore[union-attr]
-                ttl=_cfg.lm_studio.model_ttl,  # type: ignore[union-attr]
-            )
+            client = LMStudioClient.from_config(_cfg)  # type: ignore[arg-type]
             _pipeline_sem.acquire()
             try:
                 client.load_model()
@@ -517,15 +509,7 @@ def _run_learning(item, resolved_path: str, cfg) -> None:
     except Exception:
         doc_text = ""
 
-    client = LMStudioClient(
-        base_url=cfg.lm_studio.base_url,
-        model_name=cfg.lm_studio.model,
-        prompts_dir=cfg.prompts_dir,
-        temperature=cfg.lm_studio.temperature,
-        max_tokens=cfg.lm_studio.max_tokens,
-        context_length=cfg.lm_studio.context_length,
-        ttl=cfg.lm_studio.model_ttl,
-    )
+    client = LMStudioClient.from_config(cfg)
     _pipeline_sem.acquire()
     try:
         client.load_model()
