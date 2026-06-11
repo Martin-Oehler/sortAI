@@ -381,41 +381,20 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
 
     @app.get("/api/memory")
     def get_memory() -> JSONResponse:
-        import re as _re
-        memory_path = _cfg.memory_path  # type: ignore[union-attr]
-        if not memory_path.exists():
-            return JSONResponse({"rules": []})
-        raw = memory_path.read_text(encoding="utf-8")
-        rules = []
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            m = _re.match(r"^\d+\.\s+(.+)$", line)
-            rules.append(m.group(1) if m else line)
-        return JSONResponse({"rules": rules})
+        from sortai.memory import load_rules
+        return JSONResponse({"rules": load_rules(_cfg.memory_path)})  # type: ignore[union-attr]
 
     @app.delete("/api/memory/{rule_idx}")
     def delete_memory_rule(rule_idx: int) -> JSONResponse:
-        import re as _re
+        from sortai.memory import load_rules, save_rules
         memory_path = _cfg.memory_path  # type: ignore[union-attr]
         if not memory_path.exists():
             raise HTTPException(status_code=404, detail="No memory file")
-        raw = memory_path.read_text(encoding="utf-8")
-        rules = []
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            m = _re.match(r"^\d+\.\s+(.+)$", line)
-            rules.append(m.group(1) if m else line)
+        rules = load_rules(memory_path)
         if rule_idx < 0 or rule_idx >= len(rules):
             raise HTTPException(status_code=404, detail="Rule not found")
         rules.pop(rule_idx)
-        lines = ["# Classification Memory\n"]
-        for i, rule in enumerate(rules, 1):
-            lines.append(f"{i}. {rule}")
-        memory_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        save_rules(memory_path, rules)
         _broadcast("memory_updated")
         return JSONResponse({"rules": rules})
 
@@ -501,8 +480,8 @@ def _run_learning(item, resolved_path: str, cfg) -> None:
     """Background thread: learn from a user correction, then consolidate memory."""
     from sortai.file_ops import log_memory_update
     from sortai.llm_client import LMStudioClient
+    from sortai.memory import consolidate_memory, learn_from_correction
     from sortai.pdf_reader import extract_text
-    from sortai.pipeline import Pipeline
 
     try:
         doc_text = extract_text(resolved_path)
@@ -513,9 +492,9 @@ def _run_learning(item, resolved_path: str, cfg) -> None:
     _pipeline_sem.acquire()
     try:
         client.load_model()
-        pipeline = Pipeline(cfg, client)
 
-        rule, learn_interactions = pipeline.learn_from_correction(
+        rule, learn_interactions = learn_from_correction(
+            client,
             doc_text=doc_text,
             summary=item.summary,
             previous_folder=item.previous_proposed_folder,
@@ -525,7 +504,7 @@ def _run_learning(item, resolved_path: str, cfg) -> None:
 
         consolidate_interactions: list = []
         if rule:
-            consolidate_interactions = pipeline.consolidate_memory(cfg.memory_path, rule)
+            consolidate_interactions = consolidate_memory(client, cfg.memory_path, rule)
             _broadcast("memory_updated")
 
         all_interactions = learn_interactions + consolidate_interactions
