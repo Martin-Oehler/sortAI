@@ -14,7 +14,8 @@ from pathlib import Path
 from rich.console import Console
 
 from sortai.llm_client import LMStudioClient
-from sortai.pipeline import StageInteraction, _apply_document, _log_exchange
+from sortai.pipeline import StageInteraction, _document_value, _log_exchange
+from sortai.prompts import load_prompt, render
 
 MEMORY_HEADER = "# Classification Memory"
 
@@ -81,13 +82,14 @@ def learn_from_correction(
 
     Returns (rule, interactions). rule is None if the LLM decides not to learn.
     """
-    template = client.load_prompt("learn")
-    prompt = (
-        _apply_document(template, doc_text, None)
-        .replace("{{previous_folder}}", previous_folder)
-        .replace("{{user_hint}}", user_hint)
-        .replace("{{new_folder}}", new_folder)
-        .replace("{{summary}}", summary)
+    template = load_prompt(client.prompts_dir, "learn")
+    prompt = render(
+        template,
+        document_text=_document_value(doc_text, None),
+        previous_folder=previous_folder,
+        user_hint=user_hint,
+        new_folder=new_folder,
+        summary=summary,
     )
     schema = {
         "type": "object",
@@ -130,11 +132,11 @@ def consolidate_memory(
     existing_rules.append(new_rule)
     current_memory = _format_numbered(existing_rules)
 
-    template = client.load_prompt("consolidate")
-    prompt = (
-        template
-        .replace("{{new_rule}}", new_rule)
-        .replace("{{current_memory}}", current_memory)
+    template = load_prompt(client.prompts_dir, "consolidate")
+    prompt = render(
+        template,
+        new_rule=new_rule,
+        current_memory=current_memory,
     )
     schema = {
         "type": "object",

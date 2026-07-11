@@ -17,6 +17,7 @@ from sortai.config import Config
 from sortai.folder_navigator import is_leaf, list_children, list_children_with_info
 from sortai.llm_client import LLMResponse, LMStudioClient
 from sortai.pdf_reader import extract_text, render_pages
+from sortai.prompts import load_prompt, render
 
 
 class ClassificationError(Exception):
@@ -36,29 +37,17 @@ _MAX_TEXT_CHARS = 4000
 _VISION_PLACEHOLDER = "(See attached PDF page images.)"
 
 
-def _apply_hint(prompt: str, hint: str | None) -> str:
-    if hint:
-        return prompt.replace("{{user_hint}}", hint)
-    return re.sub(r"[^\n]*\{\{user_hint\}\}[^\n]*\n?", "", prompt)
-
-
-def _apply_memory(prompt: str, memory: str | None) -> str:
-    if memory and memory.strip():
-        return prompt.replace("{{memory}}", memory.strip())
-    return re.sub(r"[^\n]*\{\{memory\}\}[^\n]*\n?", "", prompt)
-
-
 def _truncate(text: str) -> str:
     if len(text) <= _MAX_TEXT_CHARS:
         return text
     return text[:_MAX_TEXT_CHARS] + "\n…[truncated]"
 
 
-def _apply_document(prompt: str, text: str, images: list[str] | None) -> str:
-    """Replace {{document_text}} with either the vision placeholder or the extracted text."""
+def _document_value(text: str, images: list[str] | None) -> str:
+    """The value substituted for {{document_text}}: vision placeholder or (truncated) text."""
     if images:
-        return prompt.replace("{{document_text}}", _VISION_PLACEHOLDER)
-    return prompt.replace("{{document_text}}", _truncate(text))
+        return _VISION_PLACEHOLDER
+    return _truncate(text)
 
 
 def _log_exchange(console: Console, stage: str, prompt: str, response: str, reasoning: str = "") -> None:
@@ -106,8 +95,12 @@ class Pipeline:
 
         Raises ClassificationError if the model determines the content is unclassifiable.
         """
-        template = self.client.load_prompt("summarize")
-        prompt = _apply_hint(_apply_document(template, text, images), user_hint)
+        template = load_prompt(self.config.prompts_dir, "summarize")
+        prompt = render(
+            template,
+            document_text=_document_value(text, images),
+            user_hint=user_hint or None,
+        )
         schema = {
             "type": "object",
             "properties": {
@@ -135,7 +128,7 @@ class Pipeline:
 
     def navigate_to_folder(self, text: str, summary: str, user_hint: str | None = None, images: list[str] | None = None) -> tuple[Path, list[StageInteraction]]:
         """Stage 2 — walk the archive tree to find the best target folder."""
-        template = self.client.load_prompt("navigate")
+        template = load_prompt(self.config.prompts_dir, "navigate")
         current = self.config.archive
         step = 0
         interactions: list[StageInteraction] = []
@@ -145,6 +138,7 @@ class Pipeline:
             memory = load_memory_text(self.config.memory_path)
         else:
             memory = None
+        memory_value = memory.strip() if memory and memory.strip() else None
 
         for _ in range(self.config.max_navigate_depth):
             children = list_children(current)
@@ -165,19 +159,14 @@ class Pipeline:
                     line += f" — {info.description}"
                 listing_lines.append(line)
             folder_listing = "\n".join(listing_lines)
-            prompt = _apply_hint(
-                _apply_memory(
-                    _apply_document(
-                        template
-                        .replace("{{current_folder}}", str(current))
-                        .replace("{{folder_listing}}", folder_listing)
-                        .replace("{{summary}}", summary),
-                        text,
-                        images,
-                    ),
-                    memory,
-                ),
-                user_hint,
+            prompt = render(
+                template,
+                current_folder=str(current),
+                folder_listing=folder_listing,
+                summary=summary,
+                document_text=_document_value(text, images),
+                memory=memory_value,
+                user_hint=user_hint or None,
             )
             schema = {
                 "type": "object",
@@ -210,17 +199,14 @@ class Pipeline:
         existing = sorted(p.name for p in target.iterdir() if p.is_file()) if target.exists() else []
         existing_files = "\n".join(f"- {f}" for f in existing[:20]) or "(none)"
 
-        template = self.client.load_prompt("name_file")
-        prompt = _apply_hint(
-            _apply_document(
-                template
-                .replace("{{target_folder}}", str(target))
-                .replace("{{existing_files}}", existing_files)
-                .replace("{{summary}}", summary),
-                text,
-                images,
-            ),
-            user_hint,
+        template = load_prompt(self.config.prompts_dir, "name_file")
+        prompt = render(
+            template,
+            target_folder=str(target),
+            existing_files=existing_files,
+            summary=summary,
+            document_text=_document_value(text, images),
+            user_hint=user_hint or None,
         )
         schema = {
             "type": "object",

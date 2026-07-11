@@ -129,14 +129,6 @@ class LMStudioClient:
         return LLMResponse(content=content, reasoning="")
 
     # ------------------------------------------------------------------
-    # Prompt loading
-    # ------------------------------------------------------------------
-
-    def load_prompt(self, name: str) -> str:
-        """Return the contents of prompts/{name}.md."""
-        return (self.prompts_dir / f"{name}.md").read_text(encoding="utf-8")
-
-    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 

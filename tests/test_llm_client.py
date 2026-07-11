@@ -256,32 +256,3 @@ class TestCompleteStructuredTTL:
 
         call_kwargs = client._openai.chat.completions.create.call_args.kwargs
         assert "extra_body" not in call_kwargs
-
-
-
-# ---------------------------------------------------------------------------
-# load_prompt()
-# ---------------------------------------------------------------------------
-
-class TestLoadPrompt:
-    def test_reads_correct_file(self, tmp_path: Path) -> None:
-        (tmp_path / "classify.md").write_text("Classify the document.", encoding="utf-8")
-        client = _make_client(tmp_path)
-
-        result = client.load_prompt("classify")
-
-        assert result == "Classify the document."
-
-    def test_reads_nested_prompt_name(self, tmp_path: Path) -> None:
-        (tmp_path / "summary.md").write_text("Summarize this.", encoding="utf-8")
-        client = _make_client(tmp_path)
-
-        assert client.load_prompt("summary") == "Summarize this."
-
-    def test_missing_prompt_raises_file_not_found(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-
-        with pytest.raises(FileNotFoundError):
-            client.load_prompt("nonexistent")
-
-

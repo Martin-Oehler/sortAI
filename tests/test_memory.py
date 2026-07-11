@@ -18,6 +18,14 @@ from sortai.memory import (
 )
 
 
+@pytest.fixture(autouse=True)
+def load_prompt(monkeypatch):
+    """Patch the module-level prompt loader; learning tests supply templates in-memory."""
+    mock = MagicMock(return_value="")
+    monkeypatch.setattr("sortai.memory.load_prompt", mock)
+    return mock
+
+
 def _rj(data: dict) -> LLMResponse:
     """Shorthand for an LLMResponse with JSON content (structured output)."""
     return LLMResponse(content=json.dumps(data), reasoning="")
@@ -121,17 +129,17 @@ class TestSaveRules:
 # ---------------------------------------------------------------------------
 
 class TestLearnFromCorrection:
-    def _client(self, response: LLMResponse) -> MagicMock:
+    def _client(self, load_prompt, response: LLMResponse) -> MagicMock:
         client = MagicMock()
-        client.load_prompt.return_value = (
+        load_prompt.return_value = (
             "DOC:{{document_text}} PREV:{{previous_folder}} HINT:{{user_hint}} "
             "NEW:{{new_folder}} SUM:{{summary}}"
         )
         client.complete_structured.return_value = response
         return client
 
-    def test_returns_rule_when_should_learn(self, tmp_path: Path):
-        client = self._client(_rj({"reasoning": "why", "should_learn": True, "rule": "the rule"}))
+    def test_returns_rule_when_should_learn(self, tmp_path: Path, load_prompt):
+        client = self._client(load_prompt, _rj({"reasoning": "why", "should_learn": True, "rule": "the rule"}))
 
         rule, interactions = learn_from_correction(
             client, "doc text", "summary", "old/folder", "a hint", "new/folder")
@@ -143,8 +151,8 @@ class TestLearnFromCorrection:
         assert interactions[0]["answer"] == "the rule"
         assert interactions[0]["reasoning"] == "why"
 
-    def test_returns_none_when_should_not_learn(self, tmp_path: Path):
-        client = self._client(_rj({"reasoning": "", "should_learn": False, "rule": "ignored"}))
+    def test_returns_none_when_should_not_learn(self, tmp_path: Path, load_prompt):
+        client = self._client(load_prompt, _rj({"reasoning": "", "should_learn": False, "rule": "ignored"}))
 
         rule, interactions = learn_from_correction(
             client, "doc", "sum", "old", "hint", "new")
@@ -152,20 +160,20 @@ class TestLearnFromCorrection:
         assert rule is None
         assert interactions[0]["answer"] == "(nothing learned)"
 
-    def test_returns_none_when_rule_is_blank(self, tmp_path: Path):
-        client = self._client(_rj({"reasoning": "", "should_learn": True, "rule": "   "}))
+    def test_returns_none_when_rule_is_blank(self, tmp_path: Path, load_prompt):
+        client = self._client(load_prompt, _rj({"reasoning": "", "should_learn": True, "rule": "   "}))
 
         rule, _ = learn_from_correction(client, "doc", "sum", "old", "hint", "new")
 
         assert rule is None
 
-    def test_prompt_placeholders_substituted(self, tmp_path: Path):
-        client = self._client(_rj({"reasoning": "", "should_learn": True, "rule": "r"}))
+    def test_prompt_placeholders_substituted(self, tmp_path: Path, load_prompt):
+        client = self._client(load_prompt, _rj({"reasoning": "", "should_learn": True, "rule": "r"}))
 
         learn_from_correction(
             client, "mydoc", "mysum", "prev/dir", "myhint", "next/dir")
 
-        client.load_prompt.assert_called_once_with("learn")
+        load_prompt.assert_called_once_with(client.prompts_dir, "learn")
         prompt = client.complete_structured.call_args[0][0]
         assert "DOC:mydoc" in prompt
         assert "PREV:prev/dir" in prompt
@@ -179,53 +187,53 @@ class TestLearnFromCorrection:
 # ---------------------------------------------------------------------------
 
 class TestConsolidateMemory:
-    def _client(self, rules: list[str], reasoning: str = "") -> MagicMock:
+    def _client(self, load_prompt, rules: list[str], reasoning: str = "") -> MagicMock:
         client = MagicMock()
-        client.load_prompt.return_value = "NEW:{{new_rule}} MEM:{{current_memory}}"
+        load_prompt.return_value = "NEW:{{new_rule}} MEM:{{current_memory}}"
         client.complete_structured.return_value = _rj({"reasoning": reasoning, "rules": rules})
         return client
 
-    def test_writes_consolidated_rules_to_file(self, tmp_path: Path):
+    def test_writes_consolidated_rules_to_file(self, tmp_path: Path, load_prompt):
         mem = tmp_path / "mem.md"
-        client = self._client(["merged rule"])
+        client = self._client(load_prompt, ["merged rule"])
 
         consolidate_memory(client, mem, "new rule")
 
         assert mem.read_text(encoding="utf-8") == "# Classification Memory\n\n1. merged rule\n"
 
-    def test_creates_file_when_missing(self, tmp_path: Path):
+    def test_creates_file_when_missing(self, tmp_path: Path, load_prompt):
         mem = tmp_path / "sub" / "mem.md"
-        client = self._client(["only rule"])
+        client = self._client(load_prompt, ["only rule"])
 
         consolidate_memory(client, mem, "only rule")
 
         assert load_rules(mem) == ["only rule"]
 
-    def test_existing_rules_plus_new_rule_in_prompt(self, tmp_path: Path):
+    def test_existing_rules_plus_new_rule_in_prompt(self, tmp_path: Path, load_prompt):
         mem = tmp_path / "mem.md"
         save_rules(mem, ["existing one", "existing two"])
-        client = self._client(["a", "b", "c"])
+        client = self._client(load_prompt, ["a", "b", "c"])
 
         consolidate_memory(client, mem, "brand new")
 
-        client.load_prompt.assert_called_once_with("consolidate")
+        load_prompt.assert_called_once_with(client.prompts_dir, "consolidate")
         prompt = client.complete_structured.call_args[0][0]
         assert "NEW:brand new" in prompt
         assert "1. existing one" in prompt
         assert "2. existing two" in prompt
         assert "3. brand new" in prompt
 
-    def test_blank_rules_from_llm_dropped(self, tmp_path: Path):
+    def test_blank_rules_from_llm_dropped(self, tmp_path: Path, load_prompt):
         mem = tmp_path / "mem.md"
-        client = self._client(["keep me", "  ", ""])
+        client = self._client(load_prompt, ["keep me", "  ", ""])
 
         consolidate_memory(client, mem, "rule")
 
         assert load_rules(mem) == ["keep me"]
 
-    def test_returns_interaction(self, tmp_path: Path):
+    def test_returns_interaction(self, tmp_path: Path, load_prompt):
         mem = tmp_path / "mem.md"
-        client = self._client(["one", "two"], reasoning="merged duplicates")
+        client = self._client(load_prompt, ["one", "two"], reasoning="merged duplicates")
 
         interactions = consolidate_memory(client, mem, "rule")
 
@@ -236,10 +244,10 @@ class TestConsolidateMemory:
         assert ix["answer"] == "1. one\n2. two"
         assert ix["reasoning"] == "merged duplicates"
 
-    def test_round_trip_through_dashboard_format(self, tmp_path: Path):
+    def test_round_trip_through_dashboard_format(self, tmp_path: Path, load_prompt):
         """File written by consolidate_memory parses back with load_rules."""
         mem = tmp_path / "mem.md"
-        client = self._client(["rule a", "rule b"])
+        client = self._client(load_prompt, ["rule a", "rule b"])
 
         consolidate_memory(client, mem, "rule a")
 
