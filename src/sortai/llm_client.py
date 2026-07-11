@@ -7,9 +7,12 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from openai import OpenAI
+
+if TYPE_CHECKING:
+    from sortai.config import Config
 
 
 @dataclass(slots=True)
@@ -39,6 +42,19 @@ class LMStudioClient:
         self._openai = OpenAI(
             base_url=f"{self.base_url}/v1",
             api_key="lm-studio",
+        )
+
+    @classmethod
+    def from_config(cls, cfg: "Config") -> "LMStudioClient":
+        """Build a client from a Config object (single place that maps config → client params)."""
+        return cls(
+            base_url=cfg.lm_studio.base_url,
+            model_name=cfg.lm_studio.model,
+            prompts_dir=cfg.prompts_dir,
+            temperature=cfg.lm_studio.temperature,
+            max_tokens=cfg.lm_studio.max_tokens,
+            context_length=cfg.lm_studio.context_length,
+            ttl=cfg.lm_studio.model_ttl,
         )
 
     # ------------------------------------------------------------------
@@ -111,37 +127,6 @@ class LMStudioClient:
         )
         content = response.choices[0].message.content or ""
         return LLMResponse(content=content, reasoning="")
-
-    def complete(self, prompt: str, system: Optional[str] = None) -> LLMResponse:
-        """Single-turn chat completion; no conversation history kept."""
-        payload: dict = {
-            "model": self.model_name,
-            "input": prompt,
-            "temperature": self.temperature,
-            "max_output_tokens": self.max_tokens,
-        }
-        if system:
-            payload["system_prompt"] = system
-        if self.context_length is not None:
-            payload["context_length"] = self.context_length
-
-        response = self._post_v1("chat", payload, timeout=300)
-        content = ""
-        reasoning = ""
-        for item in response.get("output", []):
-            if item.get("type") == "message":
-                content = item.get("content", "")
-            elif item.get("type") == "reasoning":
-                reasoning = item.get("content", "")
-        return LLMResponse(content=content, reasoning=reasoning)
-
-    # ------------------------------------------------------------------
-    # Prompt loading
-    # ------------------------------------------------------------------
-
-    def load_prompt(self, name: str) -> str:
-        """Return the contents of prompts/{name}.md."""
-        return (self.prompts_dir / f"{name}.md").read_text(encoding="utf-8")
 
     # ------------------------------------------------------------------
     # Internal helpers

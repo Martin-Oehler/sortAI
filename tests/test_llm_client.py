@@ -5,11 +5,12 @@ import json
 import urllib.error
 from io import BytesIO
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sortai.llm_client import LLMResponse, LMStudioClient
+from sortai.config import Config, LMStudioConfig
+from sortai.llm_client import LMStudioClient
 
 
 BASE_URL = "http://localhost:1234"
@@ -150,87 +151,70 @@ class TestLoadModel:
 
 
 # ---------------------------------------------------------------------------
-# complete()
+# from_config factory
 # ---------------------------------------------------------------------------
 
-class TestComplete:
-    def _post_response(self, content: str | None = "hello", reasoning: str | None = None) -> dict:
-        output = []
-        if content is not None:
-            output.append({"type": "message", "content": content})
-        if reasoning is not None:
-            output.append({"type": "reasoning", "content": reasoning})
-        return {"output": output}
+class TestFromConfig:
+    def _make_config(self, tmp_path: Path, **lms_overrides) -> Config:
+        lms = LMStudioConfig(
+            base_url="http://example.local:9999",
+            model="factory-model",
+            temperature=0.7,
+            max_tokens=1234,
+            context_length=8192,
+            model_ttl=120,
+        )
+        for key, value in lms_overrides.items():
+            setattr(lms, key, value)
+        return Config(
+            inbox=tmp_path / "inbox",
+            archive=tmp_path / "archive",
+            prompts_dir=tmp_path / "prompts",
+            lm_studio=lms,
+        )
 
-    def test_complete_returns_llmresponse_with_content(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        with patch.object(client, "_post_v1", return_value=self._post_response("The answer is 42.")):
-            result = client.complete("What is the answer?")
-        assert isinstance(result, LLMResponse)
-        assert result.content == "The answer is 42."
+    def test_fields_match_config_values(self, tmp_path: Path) -> None:
+        cfg = self._make_config(tmp_path)
 
-    def test_complete_returns_empty_reasoning_when_absent(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        with patch.object(client, "_post_v1", return_value=self._post_response("hello")):
-            result = client.complete("test")
-        assert result.reasoning == ""
-
-    def test_complete_captures_reasoning_token(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        response = self._post_response("answer", reasoning="I thought about it carefully")
-        with patch.object(client, "_post_v1", return_value=response):
-            result = client.complete("test")
-        assert result.content == "answer"
-        assert result.reasoning == "I thought about it carefully"
-
-    def test_complete_returns_empty_content_when_no_message_output(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        with patch.object(client, "_post_v1", return_value={"output": []}):
-            result = client.complete("test")
-        assert result.content == ""
-        assert result.reasoning == ""
-
-    def test_complete_with_system_includes_system_prompt_in_payload(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        captured: list[dict] = []
-        def capture(endpoint, payload, **kwargs):
-            captured.append(payload)
-            return self._post_response("ok")
-        with patch.object(client, "_post_v1", side_effect=capture):
-            client.complete("Hi", system="You are helpful.")
-        assert captured[0]["system_prompt"] == "You are helpful."
-        assert captured[0]["input"] == "Hi"
-
-    def test_complete_without_system_omits_system_prompt(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        captured: list[dict] = []
-        def capture(endpoint, payload, **kwargs):
-            captured.append(payload)
-            return self._post_response("ok")
-        with patch.object(client, "_post_v1", side_effect=capture):
-            client.complete("ping")
-        assert "system_prompt" not in captured[0]
-
-    def test_complete_payload_includes_model_temperature_tokens(self, tmp_path: Path) -> None:
         with patch("sortai.llm_client.OpenAI"):
-            client = LMStudioClient(
-                base_url=BASE_URL,
-                model_name=MODEL,
-                prompts_dir=tmp_path,
-                temperature=0.7,
-                max_tokens=1024,
-            )
-        captured: list[dict] = []
-        def capture(endpoint, payload, **kwargs):
-            captured.append(payload)
-            return self._post_response("ok")
-        with patch.object(client, "_post_v1", side_effect=capture):
-            client.complete("test")
-        assert captured[0]["model"] == MODEL
-        assert captured[0]["temperature"] == 0.7
-        assert captured[0]["max_output_tokens"] == 1024
+            client = LMStudioClient.from_config(cfg)
 
-    def test_complete_openai_initialized_with_correct_base_url(self, tmp_path: Path) -> None:
+        assert client.base_url == "http://example.local:9999"
+        assert client.model_name == "factory-model"
+        assert client.prompts_dir == tmp_path / "prompts"
+        assert client.temperature == 0.7
+        assert client.max_tokens == 1234
+        assert client.context_length == 8192
+        assert client.ttl == 120
+
+    def test_none_optionals_pass_through(self, tmp_path: Path) -> None:
+        cfg = self._make_config(tmp_path, context_length=None, model_ttl=None)
+
+        with patch("sortai.llm_client.OpenAI"):
+            client = LMStudioClient.from_config(cfg)
+
+        assert client.context_length is None
+        assert client.ttl is None
+
+    def test_returns_lm_studio_client_instance(self, tmp_path: Path) -> None:
+        cfg = self._make_config(tmp_path)
+
+        with patch("sortai.llm_client.OpenAI") as MockOpenAI:
+            client = LMStudioClient.from_config(cfg)
+
+        assert isinstance(client, LMStudioClient)
+        MockOpenAI.assert_called_once_with(
+            base_url="http://example.local:9999/v1",
+            api_key="lm-studio",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Client initialization
+# ---------------------------------------------------------------------------
+
+class TestClientInit:
+    def test_openai_initialized_with_correct_base_url(self, tmp_path: Path) -> None:
         with patch("sortai.llm_client.OpenAI") as MockOpenAI:
             LMStudioClient(
                 base_url=BASE_URL,
@@ -242,29 +226,6 @@ class TestComplete:
             base_url=f"{BASE_URL}/v1",
             api_key="lm-studio",
         )
-
-    def test_complete_includes_context_length_when_set(self, tmp_path: Path) -> None:
-        with patch("sortai.llm_client.OpenAI"):
-            client = LMStudioClient(
-                base_url=BASE_URL, model_name=MODEL, prompts_dir=tmp_path, context_length=8192
-            )
-        captured: list[dict] = []
-        def capture(endpoint, payload, **kwargs):
-            captured.append(payload)
-            return self._post_response("ok")
-        with patch.object(client, "_post_v1", side_effect=capture):
-            client.complete("test")
-        assert captured[0].get("context_length") == 8192
-
-    def test_complete_omits_context_length_when_none(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-        captured: list[dict] = []
-        def capture(endpoint, payload, **kwargs):
-            captured.append(payload)
-            return self._post_response("ok")
-        with patch.object(client, "_post_v1", side_effect=capture):
-            client.complete("test")
-        assert "context_length" not in captured[0]
 
 
 # ---------------------------------------------------------------------------
@@ -295,32 +256,3 @@ class TestCompleteStructuredTTL:
 
         call_kwargs = client._openai.chat.completions.create.call_args.kwargs
         assert "extra_body" not in call_kwargs
-
-
-
-# ---------------------------------------------------------------------------
-# load_prompt()
-# ---------------------------------------------------------------------------
-
-class TestLoadPrompt:
-    def test_reads_correct_file(self, tmp_path: Path) -> None:
-        (tmp_path / "classify.md").write_text("Classify the document.", encoding="utf-8")
-        client = _make_client(tmp_path)
-
-        result = client.load_prompt("classify")
-
-        assert result == "Classify the document."
-
-    def test_reads_nested_prompt_name(self, tmp_path: Path) -> None:
-        (tmp_path / "summary.md").write_text("Summarize this.", encoding="utf-8")
-        client = _make_client(tmp_path)
-
-        assert client.load_prompt("summary") == "Summarize this."
-
-    def test_missing_prompt_raises_file_not_found(self, tmp_path: Path) -> None:
-        client = _make_client(tmp_path)
-
-        with pytest.raises(FileNotFoundError):
-            client.load_prompt("nonexistent")
-
-

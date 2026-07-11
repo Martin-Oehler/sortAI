@@ -271,7 +271,7 @@ class TestRunValidation:
         test_set = self._make_test_set(tmp_path, n=3)
 
         target = archive / "sub"
-        with patch("sortai.validator.LMStudioClient") as MockClient, \
+        with patch("sortai.validator.LMStudioClient.from_config") as MockClient, \
              patch("sortai.validator.Pipeline") as MockPipeline:
             mock_client = self._make_client_mock(tmp_path)
             MockClient.return_value = mock_client
@@ -291,7 +291,7 @@ class TestRunValidation:
         test_set = self._make_test_set(tmp_path, n=1)
 
         captured_cfg = []
-        with patch("sortai.validator.LMStudioClient") as MockClient, \
+        with patch("sortai.validator.LMStudioClient.from_config") as MockClient, \
              patch("sortai.validator.Pipeline") as MockPipeline:
             mock_client = self._make_client_mock(tmp_path)
             MockClient.return_value = mock_client
@@ -313,7 +313,7 @@ class TestRunValidation:
         cfg = make_config(archive)
         test_set = self._make_test_set(tmp_path, n=3)
 
-        with patch("sortai.validator.LMStudioClient") as MockClient, \
+        with patch("sortai.validator.LMStudioClient.from_config") as MockClient, \
              patch("sortai.validator.Pipeline") as MockPipeline:
             mock_client = self._make_client_mock(tmp_path)
             MockClient.return_value = mock_client
@@ -502,7 +502,7 @@ class TestValidateCLI:
         test_set_file = tmp_path / "test_set.json"
         write_test_set(test_set, test_set_file)
 
-        with patch("sortai.validator.LMStudioClient") as MockClient, \
+        with patch("sortai.validator.LMStudioClient.from_config") as MockClient, \
              patch("sortai.validator.Pipeline") as MockPipeline:
             mock_client = MagicMock()
             MockClient.return_value = mock_client
@@ -545,7 +545,7 @@ class TestValidateCLI:
         fake_interaction = {"stage": "summarize", "step": 1,
                             "prompt": "p", "answer": "a", "reasoning": ""}
 
-        with patch("sortai.validator.LMStudioClient") as MockClient, \
+        with patch("sortai.validator.LMStudioClient.from_config") as MockClient, \
              patch("sortai.validator.Pipeline") as MockPipeline:
             mock_client = MagicMock()
             MockClient.return_value = mock_client

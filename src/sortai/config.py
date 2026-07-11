@@ -43,6 +43,35 @@ class Config:
     lm_studio: LMStudioConfig = field(default_factory=LMStudioConfig)
     dashboard: DashboardConfig = field(default_factory=DashboardConfig)
 
+    # ------------------------------------------------------------------
+    # Derived paths
+    # ------------------------------------------------------------------
+
+    @property
+    def staging_dir(self) -> Path:
+        """Where review-mode files are staged (dashboard override or default)."""
+        return self.dashboard.staging_dir or self.inbox.parent / "_review"
+
+    @property
+    def rejected_dir(self) -> Path:
+        """Where rejected files are moved (dashboard override or default)."""
+        return self.dashboard.rejected_dir or self.inbox.parent / "_rejected"
+
+    @property
+    def queue_path(self) -> Path:
+        """Path of the persisted review queue (next to the log file)."""
+        return self.log_file.parent / "review_queue.json"
+
+    @property
+    def memory_path(self) -> Path:
+        """Path of the classification-memory rules file (in the archive root)."""
+        return self.archive / "classification-memory.md"
+
+    @property
+    def report_path(self) -> Path:
+        """Path of the HTML audit report (derived from the log file name)."""
+        return self.log_file.with_name(self.log_file.stem + "_report.html")
+
     @classmethod
     def load(cls, path: Path) -> "Config":
         if not path.exists():

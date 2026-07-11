@@ -81,10 +81,6 @@ def show_config(ctx: click.Context) -> None:
     console.print(table)
 
 
-# ---------------------------------------------------------------------------
-# Stub commands — to be implemented in later phases
-# ---------------------------------------------------------------------------
-
 @main.command("extract")
 @click.argument("pdf_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("-n", "max_chars", default=500, show_default=True, help="Max characters of extracted text to display.")
@@ -125,15 +121,7 @@ def ping_lm_studio(ctx: click.Context) -> None:
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     from sortai.llm_client import LMStudioClient
 
-    client = LMStudioClient(
-        base_url=cfg.lm_studio.base_url,
-        model_name=cfg.lm_studio.model,
-        prompts_dir=cfg.prompts_dir,
-        temperature=cfg.lm_studio.temperature,
-        max_tokens=cfg.lm_studio.max_tokens,
-        context_length=cfg.lm_studio.context_length,
-        ttl=cfg.lm_studio.model_ttl,
-    )
+    client = LMStudioClient.from_config(cfg)
 
     ping_schema = {
         "type": "object",
@@ -166,82 +154,41 @@ def ping_lm_studio(ctx: click.Context) -> None:
 def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool) -> None:
     """Run the full LLM pipeline on a single PDF (prints proposed destination)."""
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
-    from sortai.file_ops import log_decision, log_error, move_file
     from sortai.llm_client import LMStudioClient
-    from sortai.pipeline import ClassificationError, Pipeline
+    from sortai.processor import process_document
 
-    client = LMStudioClient(
-        base_url=cfg.lm_studio.base_url,
-        model_name=cfg.lm_studio.model,
-        prompts_dir=cfg.prompts_dir,
-        temperature=cfg.lm_studio.temperature,
-        max_tokens=cfg.lm_studio.max_tokens,
-        context_length=cfg.lm_studio.context_length,
-        ttl=cfg.lm_studio.model_ttl,
-    )
+    client = LMStudioClient.from_config(cfg)
+
+    review_store = None
+    if cfg.review_mode:
+        from sortai.review_store import ReviewStore
+
+        review_store = ReviewStore(cfg.queue_path)
 
     try:
-        client.load_model()
-        pipeline = Pipeline(cfg, client, verbose=verbose)
         console.print(f"[cyan]Processing[/cyan] {pdf_file.name} …")
-        target_folder, filename, summary, interactions = pipeline.run(pdf_file)
-        if cfg.review_mode:
-            from sortai.review_store import ReviewStore, make_review_item
-
-            staging_dir = cfg.dashboard.staging_dir or cfg.inbox.parent / "_review"
-            queue_path = cfg.log_file.parent / "review_queue.json"
-            review_store = ReviewStore(queue_path)
-            staged = move_file(
-                src=pdf_file.resolve(),
-                dest_dir=staging_dir,
-                new_name=pdf_file.name,
-                dry_run=cfg.dry_run,
-            )
-            if not cfg.dry_run:
-                proposed_folder = target_folder.relative_to(cfg.archive).as_posix()
-                item = make_review_item(
-                    original_filename=pdf_file.name,
-                    staging_path=staged,
-                    proposed_folder=proposed_folder,
-                    proposed_filename=filename,
-                    summary=summary,
-                    interactions=interactions,
-                )
-                review_store.add(item)
-            label = "[dim](dry run)[/dim] " if cfg.dry_run else ""
-            console.print(f"[yellow]⚠ Staged for review:[/yellow] {label}{pdf_file.name} → [dim]{staged}[/dim]")
-        else:
-            dest = move_file(
-                src=pdf_file.resolve(),
-                dest_dir=target_folder,
-                new_name=filename,
-                dry_run=cfg.dry_run,
-            )
-            log_decision(
-                src=pdf_file.resolve(),
-                dest=dest,
-                summary=summary,
-                dry_run=cfg.dry_run,
-                log_path=cfg.log_file,
-                archive_root=cfg.archive,
-                interactions=interactions,
-            )
-            label = "[dim](dry run)[/dim] " if cfg.dry_run else ""
-            console.print(f"\n[bold green]->[/bold green] {label}{dest}")
-            html_path = cfg.log_file.with_name(cfg.log_file.stem + "_report.html")
-            console.print(f"[dim]Report: {html_path}[/dim]\n")
-    except ClassificationError as exc:
-        console.print(f"\n[yellow]Cannot classify:[/yellow] {exc}")
-        log_error(
-            src=pdf_file.resolve(),
-            reason=str(exc),
-            log_path=cfg.log_file,
-            archive_root=cfg.archive,
+        outcome = process_document(
+            cfg,
+            client,
+            pdf_file,
+            review_store=review_store,
+            verbose=verbose,
         )
-        raise SystemExit(2)
     except RuntimeError as exc:
         console.print(f"\n[bold red]Error:[/bold red] {exc}")
         raise SystemExit(1)
+
+    label = "[dim](dry run)[/dim] " if outcome.dry_run else ""
+    if outcome.status == "error":
+        console.print(f"\n[yellow]Cannot classify:[/yellow] {outcome.error_reason}")
+        raise SystemExit(2)
+    if outcome.status == "staged":
+        console.print(
+            f"[yellow]⚠ Staged for review:[/yellow] {label}{pdf_file.name} → [dim]{outcome.final_path}[/dim]"
+        )
+    else:
+        console.print(f"\n[bold green]->[/bold green] {label}{outcome.final_path}")
+        console.print(f"[dim]Report: {cfg.report_path}[/dim]\n")
 
 
 @main.command("log")
@@ -249,7 +196,8 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool) -> None:
 @click.pass_context
 def show_log(ctx: click.Context, count: int) -> None:
     """Show recent sort decisions from the log."""
-    from sortai.file_ops import dest_label, load_jsonl_entries
+    from sortai.file_ops import load_jsonl_entries
+    from sortai.report import dest_label
 
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     log_path = cfg.log_file
@@ -295,7 +243,7 @@ def show_log(ctx: click.Context, count: int) -> None:
 @click.pass_context
 def generate_report(ctx: click.Context) -> None:
     """Regenerate the HTML audit report from the existing JSONL log."""
-    from sortai.file_ops import render_html_report
+    from sortai.report import render_html_report
 
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     log_path = cfg.log_file
@@ -305,8 +253,7 @@ def generate_report(ctx: click.Context) -> None:
         raise SystemExit(1)
 
     render_html_report(log_path)
-    html_path = log_path.with_name(log_path.stem + "_report.html")
-    console.print(f"[bold green]Report written:[/bold green] {html_path}")
+    console.print(f"[bold green]Report written:[/bold green] {cfg.report_path}")
 
 
 @main.command("watch")
@@ -324,9 +271,8 @@ def watch_inbox(ctx: click.Context, once: bool, verbose: bool, review_mode: bool
     effective_review = review_mode or cfg.review_mode
     review_store = None
     if effective_review:
-        queue_path = cfg.log_file.parent / "review_queue.json"
-        review_store = ReviewStore(queue_path)
-        console.print(f"[yellow]Review mode:[/yellow] files will be staged for approval. Queue: {queue_path}")
+        review_store = ReviewStore(cfg.queue_path)
+        console.print(f"[yellow]Review mode:[/yellow] files will be staged for approval. Queue: {cfg.queue_path}")
 
     watcher = Watcher(cfg, verbose=verbose, review_mode=effective_review, review_store=review_store)
 
@@ -347,24 +293,41 @@ def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool, watc
     from sortai.review_store import ReviewStore
 
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
-    queue_path = cfg.log_file.parent / "review_queue.json"
-    review_store = ReviewStore(queue_path)
+    review_store = ReviewStore(cfg.queue_path)
 
     effective_port = port if port is not None else cfg.dashboard.port
     open_browser = (not no_browser) and cfg.dashboard.auto_open_browser
 
     watcher = None
+    pipeline_sem = None
     if watch_mode:
+        import threading
+
         from sortai.watcher import Watcher
         effective_review = ctx.obj["review_mode"] or cfg.review_mode
-        watcher = Watcher(cfg, review_mode=effective_review, review_store=review_store if effective_review else None)
+        # Shared with the dashboard so reprocess/learning and the watcher
+        # never run the LLM pipeline concurrently.
+        pipeline_sem = threading.Semaphore(1)
+        watcher = Watcher(
+            cfg,
+            review_mode=effective_review,
+            review_store=review_store if effective_review else None,
+            pipeline_sem=pipeline_sem,
+        )
         console.print(f"[yellow]Watching[/yellow] {cfg.inbox} for new PDFs.")
 
     console.print(
         f"[bold green]Dashboard[/bold green] starting at "
         f"[cyan]http://localhost:{effective_port}[/cyan] — press Ctrl-C to stop."
     )
-    run_dashboard(cfg, review_store, port=effective_port, open_browser=open_browser, watcher=watcher)
+    run_dashboard(
+        cfg,
+        review_store,
+        port=effective_port,
+        open_browser=open_browser,
+        watcher=watcher,
+        pipeline_sem=pipeline_sem,
+    )
 
 
 # ---------------------------------------------------------------------------

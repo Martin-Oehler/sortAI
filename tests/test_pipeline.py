@@ -16,6 +16,19 @@ from sortai.pipeline import Pipeline, StageInteraction, _sanitize_filename
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def load_prompt(monkeypatch):
+    """Patch the module-level prompt loader so tests supply templates in-memory.
+
+    Prompt loading moved off the client (item 12); the pipeline now calls the
+    module-level ``load_prompt(prompts_dir, name)``. Rendering is left un-patched
+    so tests exercise the real single-pass ``render``.
+    """
+    mock = MagicMock(return_value="")
+    monkeypatch.setattr("sortai.pipeline.load_prompt", mock)
+    return mock
+
+
 def make_config(archive: Path, max_navigate_depth: int = 10) -> Config:
     """Return a minimal Config whose archive points to *archive*."""
     cfg = Config.__new__(Config)
@@ -119,21 +132,21 @@ class TestSanitizeFilename:
 # ---------------------------------------------------------------------------
 
 class TestSummarize:
-    def test_uses_summarize_template(self, tmp_path: Path):
+    def test_uses_summarize_template(self, tmp_path: Path, load_prompt):
         client = MagicMock()
-        client.load_prompt.side_effect = lambda name: f"TMPL:{name}:{{{{document_text}}}}"
+        load_prompt.side_effect = lambda prompts_dir, name: f"TMPL:{name}:{{{{document_text}}}}"
         client.complete_structured.return_value = _summarize_resp("summary text")
         pipeline = Pipeline(make_config(tmp_path), client)
 
         result, interactions = pipeline.summarize("hello doc")
 
-        client.load_prompt.assert_called_once_with("summarize")
+        load_prompt.assert_called_once_with(Path("prompts"), "summarize")
         assert client.complete_structured.call_args[0][0] == "TMPL:summarize:hello doc"
         assert result == "summary text"
 
-    def test_text_substituted_into_template(self, tmp_path: Path):
+    def test_text_substituted_into_template(self, tmp_path: Path, load_prompt):
         client = MagicMock()
-        client.load_prompt.return_value = "Please summarize: {{document_text}}"
+        load_prompt.return_value = "Please summarize: {{document_text}}"
         client.complete_structured.return_value = _summarize_resp("the summary")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -141,9 +154,9 @@ class TestSummarize:
 
         assert client.complete_structured.call_args[0][0] == "Please summarize: my important text"
 
-    def test_long_text_is_truncated(self, tmp_path: Path):
+    def test_long_text_is_truncated(self, tmp_path: Path, load_prompt):
         client = MagicMock()
-        client.load_prompt.return_value = "{{document_text}}"
+        load_prompt.return_value = "{{document_text}}"
         client.complete_structured.return_value = _summarize_resp("ok")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -154,18 +167,18 @@ class TestSummarize:
         assert len(sent) < 5000
         assert "truncated" in sent
 
-    def test_returns_stripped_completion(self, tmp_path: Path):
+    def test_returns_stripped_completion(self, tmp_path: Path, load_prompt):
         client = MagicMock()
-        client.load_prompt.return_value = "{{document_text}}"
+        load_prompt.return_value = "{{document_text}}"
         client.complete_structured.return_value = _summarize_resp("\n  result with spaces \n")
         pipeline = Pipeline(make_config(tmp_path), client)
 
         result, _ = pipeline.summarize("text")
         assert result == "result with spaces"
 
-    def test_returns_interaction_with_correct_fields(self, tmp_path: Path):
+    def test_returns_interaction_with_correct_fields(self, tmp_path: Path, load_prompt):
         client = MagicMock()
-        client.load_prompt.return_value = "Summarize: {{document_text}}"
+        load_prompt.return_value = "Summarize: {{document_text}}"
         client.complete_structured.return_value = _summarize_resp("my summary", reason="thought process")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -179,14 +192,41 @@ class TestSummarize:
         assert ix["reasoning"] == "thought process"
         assert "doc text" in ix["prompt"]
 
-    def test_interaction_reasoning_empty_when_absent(self, tmp_path: Path):
+    def test_interaction_reasoning_empty_when_absent(self, tmp_path: Path, load_prompt):
         client = MagicMock()
-        client.load_prompt.return_value = "{{document_text}}"
+        load_prompt.return_value = "{{document_text}}"
         client.complete_structured.return_value = _summarize_resp("summary", reason="")
         pipeline = Pipeline(make_config(tmp_path), client)
 
         _, interactions = pipeline.summarize("text")
         assert interactions[0]["reasoning"] == ""
+
+    def test_user_hint_line_dropped_when_absent(self, tmp_path: Path, load_prompt):
+        """The {{user_hint}} line is stripped when no hint is supplied."""
+        client = MagicMock()
+        load_prompt.return_value = "DOC: {{document_text}}\nHINT: {{user_hint}}\nEND"
+        client.complete_structured.return_value = _summarize_resp("ok")
+        pipeline = Pipeline(make_config(tmp_path), client)
+
+        pipeline.summarize("text")
+
+        sent = client.complete_structured.call_args[0][0]
+        assert "HINT:" not in sent
+        assert sent == "DOC: text\nEND"
+
+    def test_document_text_containing_placeholder_not_corrupted(self, tmp_path: Path, load_prompt):
+        """A document literally containing {{user_hint}} must not corrupt the prompt."""
+        client = MagicMock()
+        load_prompt.return_value = "DOC: {{document_text}}\nHINT: {{user_hint}}"
+        client.complete_structured.return_value = _summarize_resp("ok")
+        pipeline = Pipeline(make_config(tmp_path), client)
+
+        pipeline.summarize("evil {{user_hint}} text", user_hint="real hint")
+
+        sent = client.complete_structured.call_args[0][0]
+        # The literal placeholder from the document survives verbatim; the real
+        # hint is substituted only into the template's own {{user_hint}} slot.
+        assert sent == "DOC: evil {{user_hint}} text\nHINT: real hint"
 
 
 # ---------------------------------------------------------------------------
@@ -204,10 +244,10 @@ class TestNavigateToFolder:
         _create(tmp_path, structure)
         return tmp_path
 
-    def test_stops_at_leaf_node(self, tmp_path: Path):
+    def test_stops_at_leaf_node(self, tmp_path: Path, load_prompt):
         """If the archive root is a leaf (no sub-dirs), returns root immediately."""
         client = MagicMock()
-        client.load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
+        load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
         pipeline = Pipeline(make_config(tmp_path), client)
 
         result, interactions = pipeline.navigate_to_folder("doc text", "summary")
@@ -216,11 +256,11 @@ class TestNavigateToFolder:
         client.complete_structured.assert_not_called()
         assert interactions == []
 
-    def test_llm_returning_dot_stops_navigation(self, tmp_path: Path):
+    def test_llm_returning_dot_stops_navigation(self, tmp_path: Path, load_prompt):
         """LLM returning '.' means 'stay here'; loop breaks."""
         self._make_archive(tmp_path, {"invoices": {}, "contracts": {}})
         client = MagicMock()
-        client.load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
+        load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
         client.complete_structured.return_value = _navigate_resp(".")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -231,7 +271,7 @@ class TestNavigateToFolder:
         assert len(interactions) == 1
         assert interactions[0]["answer"] == "."
 
-    def test_llm_returning_invalid_name_raises(self, tmp_path: Path):
+    def test_llm_returning_invalid_name_raises(self, tmp_path: Path, load_prompt):
         """LLM returning a folder not in the archive causes FileNotFoundError on next iteration.
 
         In production, structured output constrains choices to valid children, so this
@@ -239,18 +279,18 @@ class TestNavigateToFolder:
         """
         self._make_archive(tmp_path, {"invoices": {}, "contracts": {}})
         client = MagicMock()
-        client.load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
+        load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
         client.complete_structured.return_value = _navigate_resp("nonexistent_folder")
         pipeline = Pipeline(make_config(tmp_path), client)
 
         with pytest.raises(FileNotFoundError):
             pipeline.navigate_to_folder("doc", "sum")
 
-    def test_follows_valid_path_one_level(self, tmp_path: Path):
+    def test_follows_valid_path_one_level(self, tmp_path: Path, load_prompt):
         """LLM choosing a valid child descends into it."""
         self._make_archive(tmp_path, {"invoices": {}, "contracts": {}})
         client = MagicMock()
-        client.load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
+        load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
         client.complete_structured.return_value = _navigate_resp("invoices")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -258,11 +298,11 @@ class TestNavigateToFolder:
 
         assert result == tmp_path / "invoices"
 
-    def test_follows_valid_path_multiple_levels(self, tmp_path: Path):
+    def test_follows_valid_path_multiple_levels(self, tmp_path: Path, load_prompt):
         """LLM can descend multiple levels through the tree."""
         self._make_archive(tmp_path, {"finance": {"invoices": {}, "receipts": {}}})
         client = MagicMock()
-        client.load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
+        load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
         client.complete_structured.side_effect = [_navigate_resp("finance"), _navigate_resp("invoices")]
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -274,12 +314,12 @@ class TestNavigateToFolder:
         assert interactions[0]["step"] == 1
         assert interactions[1]["step"] == 2
 
-    def test_respects_max_navigate_depth(self, tmp_path: Path):
+    def test_respects_max_navigate_depth(self, tmp_path: Path, load_prompt):
         """Navigation never exceeds max_navigate_depth iterations."""
         # Build a deep chain: root/a/b/c/d/e (depth 5)
         self._make_archive(tmp_path, {"a": {"b": {"c": {"d": {"e": {}}}}}})
         client = MagicMock()
-        client.load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
+        load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
         # LLM always picks the first child it sees
         client.complete_structured.side_effect = [
             _navigate_resp(v) for v in ["a", "b", "c", "d", "e", "should_not_reach"]
@@ -293,12 +333,12 @@ class TestNavigateToFolder:
         assert client.complete_structured.call_count <= 3
         assert result == tmp_path / "a" / "b" / "c"
 
-    def test_template_substitution_in_navigate_prompt(self, tmp_path: Path):
+    def test_template_substitution_in_navigate_prompt(self, tmp_path: Path, load_prompt):
         """navigate prompt receives correct substitutions."""
         self._make_archive(tmp_path, {"docs": {}})
         client = MagicMock()
         template = "FOLDER:{{current_folder}} LIST:{{folder_listing}} SUM:{{summary}} TEXT:{{document_text}}"
-        client.load_prompt.return_value = template
+        load_prompt.return_value = template
         client.complete_structured.return_value = _navigate_resp(".")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -310,10 +350,10 @@ class TestNavigateToFolder:
         assert "SUM:mysum" in prompt_sent
         assert "TEXT:mytext" in prompt_sent
 
-    def test_interaction_stage_and_reasoning(self, tmp_path: Path):
+    def test_interaction_stage_and_reasoning(self, tmp_path: Path, load_prompt):
         self._make_archive(tmp_path, {"bank": {}})
         client = MagicMock()
-        client.load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
+        load_prompt.return_value = "{{current_folder}}{{folder_listing}}{{summary}}{{document_text}}"
         client.complete_structured.return_value = _navigate_resp(".", reasoning="no deeper folder")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -328,21 +368,21 @@ class TestNavigateToFolder:
 # ---------------------------------------------------------------------------
 
 class TestChooseFilename:
-    def test_uses_name_file_template(self, tmp_path: Path):
+    def test_uses_name_file_template(self, tmp_path: Path, load_prompt):
         client = MagicMock()
-        client.load_prompt.return_value = "{{target_folder}}{{existing_files}}{{summary}}{{document_text}}"
+        load_prompt.return_value = "{{target_folder}}{{existing_files}}{{summary}}{{document_text}}"
         client.complete_structured.return_value = _filename_resp("myfile")
         pipeline = Pipeline(make_config(tmp_path), client)
 
         pipeline.choose_filename("text", "sum", tmp_path)
 
-        client.load_prompt.assert_called_once_with("name_file")
+        load_prompt.assert_called_once_with(Path("prompts"), "name_file")
 
-    def test_template_substitution_correct(self, tmp_path: Path):
+    def test_template_substitution_correct(self, tmp_path: Path, load_prompt):
         (tmp_path / "existing.pdf").write_bytes(b"%PDF")
         client = MagicMock()
         template = "FOLDER:{{target_folder}} FILES:{{existing_files}} SUM:{{summary}} TEXT:{{document_text}}"
-        client.load_prompt.return_value = template
+        load_prompt.return_value = template
         client.complete_structured.return_value = _filename_resp("result")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -354,10 +394,10 @@ class TestChooseFilename:
         assert "SUM:mysum" in prompt_sent
         assert "TEXT:mytext" in prompt_sent
 
-    def test_empty_target_dir_shows_none(self, tmp_path: Path):
+    def test_empty_target_dir_shows_none(self, tmp_path: Path, load_prompt):
         """An empty target directory shows '(none)' for existing files."""
         client = MagicMock()
-        client.load_prompt.return_value = "{{existing_files}}"
+        load_prompt.return_value = "{{existing_files}}"
         client.complete_structured.return_value = _filename_resp("name")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -366,10 +406,10 @@ class TestChooseFilename:
         prompt_sent = client.complete_structured.call_args[0][0]
         assert "(none)" in prompt_sent
 
-    def test_nonexistent_target_dir_shows_none(self, tmp_path: Path):
+    def test_nonexistent_target_dir_shows_none(self, tmp_path: Path, load_prompt):
         """If target dir does not exist yet, existing_files is '(none)'."""
         client = MagicMock()
-        client.load_prompt.return_value = "{{existing_files}}"
+        load_prompt.return_value = "{{existing_files}}"
         client.complete_structured.return_value = _filename_resp("name")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -379,10 +419,10 @@ class TestChooseFilename:
         prompt_sent = client.complete_structured.call_args[0][0]
         assert "(none)" in prompt_sent
 
-    def test_sanitizes_llm_output(self, tmp_path: Path):
+    def test_sanitizes_llm_output(self, tmp_path: Path, load_prompt):
         """choose_filename sanitizes the raw LLM response."""
         client = MagicMock()
-        client.load_prompt.return_value = "{{document_text}}"
+        load_prompt.return_value = "{{document_text}}"
         client.complete_structured.return_value = _filename_resp("  My Invoice File  ")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -390,9 +430,9 @@ class TestChooseFilename:
 
         assert result == "my_invoice_file.pdf"
 
-    def test_returns_pdf_extension(self, tmp_path: Path):
+    def test_returns_pdf_extension(self, tmp_path: Path, load_prompt):
         client = MagicMock()
-        client.load_prompt.return_value = "{{document_text}}"
+        load_prompt.return_value = "{{document_text}}"
         client.complete_structured.return_value = _filename_resp("contract")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -400,12 +440,12 @@ class TestChooseFilename:
 
         assert result.endswith(".pdf")
 
-    def test_existing_files_capped_at_20(self, tmp_path: Path):
+    def test_existing_files_capped_at_20(self, tmp_path: Path, load_prompt):
         """At most 20 existing files are forwarded to the prompt."""
         for i in range(25):
             (tmp_path / f"file_{i:02d}.pdf").write_bytes(b"%PDF")
         client = MagicMock()
-        client.load_prompt.return_value = "{{existing_files}}"
+        load_prompt.return_value = "{{existing_files}}"
         client.complete_structured.return_value = _filename_resp("name")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -416,9 +456,9 @@ class TestChooseFilename:
         bullets = [line for line in prompt_sent.splitlines() if line.startswith("- ")]
         assert len(bullets) <= 20
 
-    def test_returns_interaction_with_correct_fields(self, tmp_path: Path):
+    def test_returns_interaction_with_correct_fields(self, tmp_path: Path, load_prompt):
         client = MagicMock()
-        client.load_prompt.return_value = "{{document_text}}"
+        load_prompt.return_value = "{{document_text}}"
         client.complete_structured.return_value = _filename_resp("my_file", reasoning="based on content")
         pipeline = Pipeline(make_config(tmp_path), client)
 
@@ -436,11 +476,11 @@ class TestChooseFilename:
 # ---------------------------------------------------------------------------
 
 class TestRun:
-    def test_orchestrates_all_three_stages(self, tmp_path: Path):
+    def test_orchestrates_all_three_stages(self, tmp_path: Path, load_prompt):
         """run() calls extract_text, summarize, navigate_to_folder, choose_filename."""
         (tmp_path / "misc").mkdir()  # give navigate a folder so it calls the LLM
         client = MagicMock()
-        client.load_prompt.return_value = "{{document_text}}{{summary}}{{current_folder}}{{folder_listing}}{{target_folder}}{{existing_files}}"
+        load_prompt.return_value = "{{document_text}}{{summary}}{{current_folder}}{{folder_listing}}{{target_folder}}{{existing_files}}"
         client.complete_structured.side_effect = [
             _summarize_resp("the summary"),
             _navigate_resp("."),
@@ -459,9 +499,9 @@ class TestRun:
         assert isinstance(target, Path)
         assert name.endswith(".pdf")
 
-    def test_calls_extract_text_on_pdf_path(self, tmp_path: Path):
+    def test_calls_extract_text_on_pdf_path(self, tmp_path: Path, load_prompt):
         client = MagicMock()
-        client.load_prompt.return_value = "{{document_text}}{{summary}}{{current_folder}}{{folder_listing}}{{target_folder}}{{existing_files}}"
+        load_prompt.return_value = "{{document_text}}{{summary}}{{current_folder}}{{folder_listing}}{{target_folder}}{{existing_files}}"
         client.complete_structured.side_effect = [
             _summarize_resp("result"),
             _filename_resp("result"),
@@ -475,9 +515,9 @@ class TestRun:
 
         mock_extract.assert_called_once_with(fake_pdf)
 
-    def test_returns_tuple_of_path_str_str_list(self, tmp_path: Path):
+    def test_returns_tuple_of_path_str_str_list(self, tmp_path: Path, load_prompt):
         client = MagicMock()
-        client.load_prompt.return_value = "{{document_text}}{{summary}}{{current_folder}}{{folder_listing}}{{target_folder}}{{existing_files}}"
+        load_prompt.return_value = "{{document_text}}{{summary}}{{current_folder}}{{folder_listing}}{{target_folder}}{{existing_files}}"
         # archive has no subdirs → navigate makes 0 LLM calls; only summarize + filename
         client.complete_structured.side_effect = [
             _summarize_resp("summary"),
@@ -495,12 +535,12 @@ class TestRun:
         assert isinstance(result[2], str)
         assert isinstance(result[3], list)
 
-    def test_summary_passed_to_navigate_and_name(self, tmp_path: Path):
+    def test_summary_passed_to_navigate_and_name(self, tmp_path: Path, load_prompt):
         """The summary returned from stage 1 is used in stages 2 and 3."""
         (tmp_path / "misc").mkdir()  # give navigate a folder so it calls the LLM
         client = MagicMock()
         template = "{{document_text}}{{summary}}{{current_folder}}{{folder_listing}}{{target_folder}}{{existing_files}}"
-        client.load_prompt.return_value = template
+        load_prompt.return_value = template
         client.complete_structured.side_effect = [
             _summarize_resp("UNIQUE_SUMMARY_VALUE"),
             _navigate_resp("."),
@@ -519,12 +559,12 @@ class TestRun:
         name_prompt = client.complete_structured.call_args_list[2][0][0]
         assert "UNIQUE_SUMMARY_VALUE" in name_prompt
 
-    def test_navigate_result_passed_to_choose_filename(self, tmp_path: Path):
+    def test_navigate_result_passed_to_choose_filename(self, tmp_path: Path, load_prompt):
         """The folder returned from navigate_to_folder is the target for choose_filename."""
         (tmp_path / "contracts").mkdir()
         client = MagicMock()
         template = "{{document_text}}{{summary}}{{current_folder}}{{folder_listing}}{{target_folder}}{{existing_files}}"
-        client.load_prompt.return_value = template
+        load_prompt.return_value = template
         client.complete_structured.side_effect = [
             _summarize_resp("summary"),
             _navigate_resp("contracts"),
@@ -537,11 +577,11 @@ class TestRun:
 
         assert target == tmp_path / "contracts"
 
-    def test_run_combines_all_stage_interactions(self, tmp_path: Path):
+    def test_run_combines_all_stage_interactions(self, tmp_path: Path, load_prompt):
         """run() returns concatenation of all stage interactions."""
         (tmp_path / "misc").mkdir()
         client = MagicMock()
-        client.load_prompt.return_value = "{{document_text}}{{summary}}{{current_folder}}{{folder_listing}}{{target_folder}}{{existing_files}}"
+        load_prompt.return_value = "{{document_text}}{{summary}}{{current_folder}}{{folder_listing}}{{target_folder}}{{existing_files}}"
         client.complete_structured.side_effect = [
             _summarize_resp("summary"),
             _navigate_resp("."),

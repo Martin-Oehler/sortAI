@@ -128,7 +128,7 @@ class TestPingCommand:
             content='{"message": "Hello from LM Studio!"}', reasoning=""
         )
 
-        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
+        with patch("sortai.llm_client.LMStudioClient.from_config", return_value=mock_client):
             runner = CliRunner()
             result = runner.invoke(
                 main,
@@ -144,7 +144,7 @@ class TestPingCommand:
             content='{"message": "Hello from LM Studio!"}', reasoning=""
         )
 
-        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
+        with patch("sortai.llm_client.LMStudioClient.from_config", return_value=mock_client):
             runner = CliRunner()
             result = runner.invoke(
                 main,
@@ -160,7 +160,7 @@ class TestPingCommand:
             content='{"message": "Hi!"}', reasoning=""
         )
 
-        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
+        with patch("sortai.llm_client.LMStudioClient.from_config", return_value=mock_client):
             runner = CliRunner()
             runner.invoke(
                 main,
@@ -178,7 +178,7 @@ class TestPingCommand:
             content='{"message": "Hi!"}', reasoning=""
         )
 
-        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
+        with patch("sortai.llm_client.LMStudioClient.from_config", return_value=mock_client):
             runner = CliRunner()
             runner.invoke(
                 main,
@@ -194,7 +194,7 @@ class TestPingCommand:
             content='{"message": "Hi!"}', reasoning=""
         )
 
-        with patch("sortai.llm_client.LMStudioClient", return_value=mock_client):
+        with patch("sortai.llm_client.LMStudioClient.from_config", return_value=mock_client):
             runner = CliRunner()
             runner.invoke(
                 main,

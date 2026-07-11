@@ -17,6 +17,7 @@ from sortai.config import Config
 from sortai.folder_navigator import is_leaf, list_children, list_children_with_info
 from sortai.llm_client import LLMResponse, LMStudioClient
 from sortai.pdf_reader import extract_text, render_pages
+from sortai.prompts import load_prompt, render
 
 
 class ClassificationError(Exception):
@@ -36,29 +37,26 @@ _MAX_TEXT_CHARS = 4000
 _VISION_PLACEHOLDER = "(See attached PDF page images.)"
 
 
-def _apply_hint(prompt: str, hint: str | None) -> str:
-    if hint:
-        return prompt.replace("{{user_hint}}", hint)
-    return re.sub(r"[^\n]*\{\{user_hint\}\}[^\n]*\n?", "", prompt)
-
-
-def _apply_memory(prompt: str, memory: str | None) -> str:
-    if memory and memory.strip():
-        return prompt.replace("{{memory}}", memory.strip())
-    return re.sub(r"[^\n]*\{\{memory\}\}[^\n]*\n?", "", prompt)
-
-
 def _truncate(text: str) -> str:
     if len(text) <= _MAX_TEXT_CHARS:
         return text
     return text[:_MAX_TEXT_CHARS] + "\n…[truncated]"
 
 
-def _apply_document(prompt: str, text: str, images: list[str] | None) -> str:
-    """Replace {{document_text}} with either the vision placeholder or the extracted text."""
+def _document_value(text: str, images: list[str] | None) -> str:
+    """The value substituted for {{document_text}}: vision placeholder or (truncated) text."""
     if images:
-        return prompt.replace("{{document_text}}", _VISION_PLACEHOLDER)
-    return prompt.replace("{{document_text}}", _truncate(text))
+        return _VISION_PLACEHOLDER
+    return _truncate(text)
+
+
+def _log_exchange(console: Console, stage: str, prompt: str, response: str, reasoning: str = "") -> None:
+    """Pretty-print a prompt/response exchange (verbose mode)."""
+    console.print(Rule(f"[bold cyan]{stage}[/bold cyan]"))
+    console.print(Panel(Markdown(prompt), title="[dim]prompt[/dim]", border_style="dim"))
+    if reasoning:
+        console.print(Panel(reasoning.strip(), title="[dim]reasoning[/dim]", border_style="yellow"))
+    console.print(Panel(response.strip(), title="[dim]response[/dim]", border_style="green"))
 
 
 _CHAR_MAP = {
@@ -90,19 +88,19 @@ class Pipeline:
         self._console = Console()
 
     def _log_exchange(self, stage: str, prompt: str, response: str, reasoning: str = "") -> None:
-        self._console.print(Rule(f"[bold cyan]{stage}[/bold cyan]"))
-        self._console.print(Panel(Markdown(prompt), title="[dim]prompt[/dim]", border_style="dim"))
-        if reasoning:
-            self._console.print(Panel(reasoning.strip(), title="[dim]reasoning[/dim]", border_style="yellow"))
-        self._console.print(Panel(response.strip(), title="[dim]response[/dim]", border_style="green"))
+        _log_exchange(self._console, stage, prompt, response, reasoning)
 
     def summarize(self, text: str, user_hint: str | None = None, images: list[str] | None = None) -> tuple[str, list[StageInteraction]]:
         """Stage 1 — summarize the document text.
 
         Raises ClassificationError if the model determines the content is unclassifiable.
         """
-        template = self.client.load_prompt("summarize")
-        prompt = _apply_hint(_apply_document(template, text, images), user_hint)
+        template = load_prompt(self.config.prompts_dir, "summarize")
+        prompt = render(
+            template,
+            document_text=_document_value(text, images),
+            user_hint=user_hint or None,
+        )
         schema = {
             "type": "object",
             "properties": {
@@ -130,16 +128,17 @@ class Pipeline:
 
     def navigate_to_folder(self, text: str, summary: str, user_hint: str | None = None, images: list[str] | None = None) -> tuple[Path, list[StageInteraction]]:
         """Stage 2 — walk the archive tree to find the best target folder."""
-        template = self.client.load_prompt("navigate")
+        template = load_prompt(self.config.prompts_dir, "navigate")
         current = self.config.archive
         step = 0
         interactions: list[StageInteraction] = []
 
         if self.config.enable_memory:
-            memory_path = self.config.archive / "classification-memory.md"
-            memory = memory_path.read_text(encoding="utf-8") if memory_path.exists() else None
+            from sortai.memory import load_memory_text  # local import avoids cycle
+            memory = load_memory_text(self.config.memory_path)
         else:
             memory = None
+        memory_value = memory.strip() if memory and memory.strip() else None
 
         for _ in range(self.config.max_navigate_depth):
             children = list_children(current)
@@ -160,19 +159,14 @@ class Pipeline:
                     line += f" — {info.description}"
                 listing_lines.append(line)
             folder_listing = "\n".join(listing_lines)
-            prompt = _apply_hint(
-                _apply_memory(
-                    _apply_document(
-                        template
-                        .replace("{{current_folder}}", str(current))
-                        .replace("{{folder_listing}}", folder_listing)
-                        .replace("{{summary}}", summary),
-                        text,
-                        images,
-                    ),
-                    memory,
-                ),
-                user_hint,
+            prompt = render(
+                template,
+                current_folder=str(current),
+                folder_listing=folder_listing,
+                summary=summary,
+                document_text=_document_value(text, images),
+                memory=memory_value,
+                user_hint=user_hint or None,
             )
             schema = {
                 "type": "object",
@@ -205,17 +199,14 @@ class Pipeline:
         existing = sorted(p.name for p in target.iterdir() if p.is_file()) if target.exists() else []
         existing_files = "\n".join(f"- {f}" for f in existing[:20]) or "(none)"
 
-        template = self.client.load_prompt("name_file")
-        prompt = _apply_hint(
-            _apply_document(
-                template
-                .replace("{{target_folder}}", str(target))
-                .replace("{{existing_files}}", existing_files)
-                .replace("{{summary}}", summary),
-                text,
-                images,
-            ),
-            user_hint,
+        template = load_prompt(self.config.prompts_dir, "name_file")
+        prompt = render(
+            template,
+            target_folder=str(target),
+            existing_files=existing_files,
+            summary=summary,
+            document_text=_document_value(text, images),
+            user_hint=user_hint or None,
         )
         schema = {
             "type": "object",
@@ -236,113 +227,6 @@ class Pipeline:
             self._log_exchange("Stage 3 — Name file", prompt, raw,
                 reasoning=parsed.get("reasoning", ""))
         return result, interactions
-
-    def learn_from_correction(
-        self,
-        doc_text: str,
-        summary: str,
-        previous_folder: str,
-        user_hint: str,
-        new_folder: str,
-    ) -> tuple[str | None, list[StageInteraction]]:
-        """Ask the LLM whether a user correction yields a generalizable rule.
-
-        Returns (rule, interactions). rule is None if the LLM decides not to learn.
-        """
-        template = self.client.load_prompt("learn")
-        prompt = (
-            _apply_document(template, doc_text, None)
-            .replace("{{previous_folder}}", previous_folder)
-            .replace("{{user_hint}}", user_hint)
-            .replace("{{new_folder}}", new_folder)
-            .replace("{{summary}}", summary)
-        )
-        schema = {
-            "type": "object",
-            "properties": {
-                "reasoning": {"type": "string"},
-                "should_learn": {"type": "boolean"},
-                "rule": {"type": "string"},
-            },
-            "required": ["reasoning", "should_learn", "rule"],
-            "additionalProperties": False,
-        }
-        resp = self.client.complete_structured(prompt, schema)
-        parsed = json.loads(resp.content)
-        rule = parsed["rule"].strip() if parsed["should_learn"] and parsed["rule"].strip() else None
-        reasoning = parsed.get("reasoning", "")
-        interactions = [StageInteraction(
-            stage="learn",
-            step=1,
-            prompt=prompt,
-            answer=parsed["rule"] if rule else "(nothing learned)",
-            reasoning=reasoning,
-        )]
-        if self.verbose:
-            self._log_exchange("Memory — Learn", prompt,
-                rule or "(nothing to learn)", reasoning=reasoning)
-        return rule, interactions
-
-    def consolidate_memory(
-        self,
-        memory_path: Path,
-        new_rule: str,
-    ) -> list[StageInteraction]:
-        """Append new_rule to memory_path, then ask the LLM to consolidate.
-
-        Writes the consolidated memory back and returns the interactions.
-        """
-        existing_rules: list[str] = []
-        if memory_path.exists():
-            raw = memory_path.read_text(encoding="utf-8")
-            for line in raw.splitlines():
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                m = re.match(r"^\d+\.\s+(.+)$", line)
-                existing_rules.append(m.group(1) if m else line)
-
-        existing_rules.append(new_rule)
-        current_memory = "\n".join(f"{i+1}. {r}" for i, r in enumerate(existing_rules))
-
-        template = self.client.load_prompt("consolidate")
-        prompt = (
-            template
-            .replace("{{new_rule}}", new_rule)
-            .replace("{{current_memory}}", current_memory)
-        )
-        schema = {
-            "type": "object",
-            "properties": {
-                "reasoning": {"type": "string"},
-                "rules": {"type": "array", "items": {"type": "string"}},
-            },
-            "required": ["reasoning", "rules"],
-            "additionalProperties": False,
-        }
-        resp = self.client.complete_structured(prompt, schema)
-        parsed = json.loads(resp.content)
-        consolidated = [r.strip() for r in parsed["rules"] if r.strip()]
-        reasoning = parsed.get("reasoning", "")
-
-        memory_path.parent.mkdir(parents=True, exist_ok=True)
-        lines = ["# Classification Memory\n"]
-        for i, rule in enumerate(consolidated, 1):
-            lines.append(f"{i}. {rule}")
-        memory_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-        interactions = [StageInteraction(
-            stage="consolidate",
-            step=1,
-            prompt=prompt,
-            answer="\n".join(f"{i+1}. {r}" for i, r in enumerate(consolidated)),
-            reasoning=reasoning,
-        )]
-        if self.verbose:
-            self._log_exchange("Memory — Consolidate", prompt,
-                "\n".join(f"{i+1}. {r}" for i, r in enumerate(consolidated)),
-                reasoning=reasoning)
-        return interactions
 
     def run(self, pdf_path: Path, user_hint: str | None = None) -> tuple[Path, str, str, list[StageInteraction]]:
         """Run all three stages and return (target_folder, filename, summary, interactions)."""

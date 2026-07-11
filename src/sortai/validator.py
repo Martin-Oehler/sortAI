@@ -170,15 +170,7 @@ def run_validation(
     archive_root = cfg_dry.archive
     total = test_set["n"]
 
-    client = LMStudioClient(
-        base_url=cfg_dry.lm_studio.base_url,
-        model_name=cfg_dry.lm_studio.model,
-        prompts_dir=cfg_dry.prompts_dir,
-        temperature=cfg_dry.lm_studio.temperature,
-        max_tokens=cfg_dry.lm_studio.max_tokens,
-        context_length=cfg_dry.lm_studio.context_length,
-        ttl=cfg_dry.lm_studio.model_ttl,
-    )
+    client = LMStudioClient.from_config(cfg_dry)
 
     results: list[ValidationResult] = []
     client.load_model()
