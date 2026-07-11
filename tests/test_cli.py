@@ -203,3 +203,38 @@ class TestPingCommand:
             )
 
         mock_client.load_model.assert_not_called()
+
+
+class TestDashboardCommand:
+    def test_log_file_option_sets_up_file_logging(self, config_file: Path, tmp_path: Path) -> None:
+        log_file = tmp_path / "dashboard.log"
+
+        with patch("sortai.dashboard_server.run") as mock_run, \
+             patch("sortai.logging_setup.setup_file_logging") as mock_setup:
+            runner = CliRunner()
+            result = runner.invoke(
+                main,
+                ["--config", str(config_file), "dashboard", "--no-browser", "--log-file", str(log_file)],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_setup.assert_called_once_with(log_file)
+        mock_run.assert_called_once()
+        assert mock_run.call_args.kwargs["uvicorn_log_config"] is None
+
+    def test_without_log_file_no_logging_setup(self, config_file: Path) -> None:
+        from sortai.dashboard_server import _UNSET
+
+        with patch("sortai.dashboard_server.run") as mock_run, \
+             patch("sortai.logging_setup.setup_file_logging") as mock_setup:
+            runner = CliRunner()
+            result = runner.invoke(
+                main,
+                ["--config", str(config_file), "dashboard", "--no-browser"],
+                catch_exceptions=False,
+            )
+
+        assert result.exit_code == 0, result.output
+        mock_setup.assert_not_called()
+        assert mock_run.call_args.kwargs["uvicorn_log_config"] is _UNSET

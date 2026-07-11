@@ -1,75 +1,58 @@
 # sortAI — Autostart Setup
 
-This directory contains platform-specific configuration files for running
-`sortai dashboard --watch --no-browser` automatically on startup.
+This directory contains platform-specific files for running the sortAI
+dashboard (with inbox watching) automatically on startup.
 
-All methods log stdout/stderr to `logs/dashboard.log` inside the project folder.
+All methods log to `logs/dashboard.log` inside the project folder.
 
 ---
 
-## Windows — Task Scheduler (recommended)
+## Windows — System tray app
 
-Runs at user logon. No extra tools required.
+Runs the dashboard as a background app with a system tray icon — no console
+window, no Task Scheduler. The tray menu has **Open Dashboard** and **Quit**.
 
-**1. Edit the path placeholder**
-
-Open `windows/sortai-task.xml` and replace both occurrences of `SORTAI_ROOT`
-with the absolute path to your project folder, e.g.
-`C:\Users\you\Documents\git\sortAI`.
-
-**2. Import the task**
+**1. Install the tray extras** (into the project venv):
 
 ```bat
-schtasks /Create /XML deploy\windows\sortai-task.xml /TN "sortai-dashboard"
+.venv\Scripts\activate
+pip install -e ".[tray]"
 ```
 
-Or open **Task Scheduler** → *Action* → *Import Task…* and select the XML file.
+**2. Install the autostart shortcut** (and start immediately):
+
+```bat
+powershell -ExecutionPolicy Bypass -File deploy\windows\install-autostart.ps1 -StartNow
+```
+
+This creates *sortAI Dashboard.lnk* in your Startup folder (`shell:startup`)
+pointing at `.venv\Scripts\sortai-tray.exe` with the project root as working
+directory — no placeholders to edit. The tray app starts at every logon.
 
 **3. Verify**
 
-Right-click *sortai-dashboard* in Task Scheduler and choose **Run**.
-Check `logs\dashboard.log` for the uvicorn startup line, then browse to
-`http://localhost:8765`.
+Look for the sortAI icon in the system tray (you may need to expand the
+overflow area). Click it (or choose **Open Dashboard**) to open
+`http://localhost:8765`. Logs go to `logs\dashboard.log` (rotating, 10 MB × 3
+files). If sortAI is already running, a second launch shows a notice and just
+opens the dashboard in the browser.
 
-**Manage:**
-
-```bat
-schtasks /Run    /TN "sortai-dashboard"   :: start now
-schtasks /End    /TN "sortai-dashboard"   :: stop
-schtasks /Delete /TN "sortai-dashboard"   :: remove
-```
-
----
-
-## Windows — NSSM Service (headless / multi-user machines)
-
-Use this when sortai must run even when no user is logged in.
-Requires [NSSM](https://nssm.cc/):
+**Uninstall:**
 
 ```bat
-winget install nssm
+powershell -ExecutionPolicy Bypass -File deploy\windows\uninstall-autostart.ps1
 ```
 
-Run the installer **as Administrator** from the project root:
-
-```bat
-deploy\windows\install-nssm-service.bat
-```
-
-The script auto-detects the venv, installs the service as `sortai-dashboard`,
-enables log rotation (10 MB), and starts it immediately.
-
-**Manage:**
-
-```bat
-nssm start  sortai-dashboard
-nssm stop   sortai-dashboard
-nssm remove sortai-dashboard confirm
-```
+This removes the Startup shortcut; quit a running instance via the tray
+menu's **Quit**.
 
 ---
 
 ## Linux — systemd user service
+
+The unit redirects stdout/stderr to `logs/dashboard.log`; alternatively, add
+`--log-file logs/dashboard.log` to the `sortai dashboard` command for built-in
+rotating file logging (10 MB × 3 files).
 
 **1. Edit the path placeholder**
 
@@ -109,6 +92,10 @@ systemctl --user disable sortai
 ---
 
 ## macOS — launchd LaunchAgent
+
+The agent redirects stdout/stderr to `logs/dashboard.log`; alternatively, add
+`--log-file logs/dashboard.log` to the `sortai dashboard` command for built-in
+rotating file logging (10 MB × 3 files).
 
 **1. Edit the path placeholder**
 

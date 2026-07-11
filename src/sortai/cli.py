@@ -286,34 +286,40 @@ def watch_inbox(ctx: click.Context, once: bool, verbose: bool, review_mode: bool
 @click.option("--port", default=None, type=int, help="Port to listen on (default: from config or 8765).")
 @click.option("--no-browser", is_flag=True, default=False, help="Do not open browser automatically.")
 @click.option("--watch", "watch_mode", is_flag=True, default=False, help="Also watch the inbox for new PDFs.")
+@click.option(
+    "--log-file",
+    "log_file",
+    default=None,
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Also write logs to this file (rotating, 10 MB × 3).",
+)
 @click.pass_context
-def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool, watch_mode: bool) -> None:
+def start_dashboard(
+    ctx: click.Context, port: int | None, no_browser: bool, watch_mode: bool, log_file: Path | None
+) -> None:
     """Start the review dashboard web server."""
+    from sortai.dashboard_server import _UNSET, build_runtime
     from sortai.dashboard_server import run as run_dashboard
-    from sortai.review_store import ReviewStore
 
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
-    review_store = ReviewStore(cfg.queue_path)
 
-    effective_port = port if port is not None else cfg.dashboard.port
+    uvicorn_log_config = _UNSET
+    if log_file is not None:
+        from sortai.logging_setup import setup_file_logging
+
+        setup_file_logging(log_file)
+        uvicorn_log_config = None
+        console.print(f"[dim]Logging to[/dim] {log_file}")
+
+    review_store, effective_port, watcher, pipeline_sem = build_runtime(
+        cfg,
+        port=port,
+        watch=watch_mode,
+        review_mode=ctx.obj["review_mode"] or cfg.review_mode,
+    )
     open_browser = (not no_browser) and cfg.dashboard.auto_open_browser
 
-    watcher = None
-    pipeline_sem = None
-    if watch_mode:
-        import threading
-
-        from sortai.watcher import Watcher
-        effective_review = ctx.obj["review_mode"] or cfg.review_mode
-        # Shared with the dashboard so reprocess/learning and the watcher
-        # never run the LLM pipeline concurrently.
-        pipeline_sem = threading.Semaphore(1)
-        watcher = Watcher(
-            cfg,
-            review_mode=effective_review,
-            review_store=review_store if effective_review else None,
-            pipeline_sem=pipeline_sem,
-        )
+    if watcher is not None:
         console.print(f"[yellow]Watching[/yellow] {cfg.inbox} for new PDFs.")
 
     console.print(
@@ -327,6 +333,7 @@ def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool, watc
         open_browser=open_browser,
         watcher=watcher,
         pipeline_sem=pipeline_sem,
+        uvicorn_log_config=uvicorn_log_config,
     )
 
 

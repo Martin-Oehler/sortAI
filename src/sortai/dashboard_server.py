@@ -485,30 +485,70 @@ def _run_learning(
 # Entry point
 # ------------------------------------------------------------------
 
+# Sentinel: distinguish "not passed" (keep uvicorn's default console logging)
+# from an explicit log_config=None (propagate records to the root logger).
+_UNSET = object()
 
-def run(
+
+def build_runtime(
+    cfg: "Config",
+    *,
+    port: "int | None" = None,
+    watch: bool = False,
+    review_mode: bool = False,
+):
+    """Assemble the runtime objects the dashboard server needs.
+
+    Returns (store, effective_port, watcher, pipeline_sem) — watcher and
+    pipeline_sem are None unless *watch* is True.
+    """
+    from sortai.review_store import ReviewStore
+
+    store = ReviewStore(cfg.queue_path)
+    effective_port = port if port is not None else cfg.dashboard.port
+
+    watcher = None
+    pipeline_sem = None
+    if watch:
+        from sortai.watcher import Watcher
+
+        # Shared with the dashboard so reprocess/learning and the watcher
+        # never run the LLM pipeline concurrently.
+        pipeline_sem = _threading.Semaphore(1)
+        watcher = Watcher(
+            cfg,
+            review_mode=review_mode,
+            review_store=store if review_mode else None,
+            pipeline_sem=pipeline_sem,
+        )
+    return store, effective_port, watcher, pipeline_sem
+
+
+def create_server(
     cfg: "Config",
     store: "ReviewStore",
     port: int,
-    open_browser: bool,
     watcher=None,
     pipeline_sem: "_threading.Semaphore | None" = None,
-) -> None:
-    import webbrowser
+    uvicorn_log_config=_UNSET,
+):
+    """Build a configured uvicorn.Server (not yet running).
 
+    Pass uvicorn_log_config=None when file logging is active so uvicorn skips
+    its own dictConfig and its records propagate to the root logger.
+    """
     import uvicorn
 
     app = create_app(cfg, store, watcher=watcher, pipeline_sem=pipeline_sem)
 
-    if open_browser:
-        import threading
-        def _open():
-            import time
-            time.sleep(1.0)
-            webbrowser.open(f"http://localhost:{port}")
-        threading.Thread(target=_open, daemon=True).start()
-
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    if uvicorn_log_config is not _UNSET:
+        # File-logging mode: no dictConfig and no log_level override, so the
+        # levels set by setup_file_logging stay in effect and uvicorn's
+        # records propagate to the root logger's file handler.
+        kwargs = {"log_config": uvicorn_log_config, "log_level": None}
+    else:
+        kwargs = {"log_level": "warning"}
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, **kwargs)
     server = uvicorn.Server(config)
 
     _original_handle_exit = server.handle_exit
@@ -527,6 +567,36 @@ def run(
         _original_handle_exit(sig, frame)
 
     server.handle_exit = _handle_exit
+    return server
+
+
+def run(
+    cfg: "Config",
+    store: "ReviewStore",
+    port: int,
+    open_browser: bool,
+    watcher=None,
+    pipeline_sem: "_threading.Semaphore | None" = None,
+    uvicorn_log_config=_UNSET,
+) -> None:
+    server = create_server(
+        cfg,
+        store,
+        port,
+        watcher=watcher,
+        pipeline_sem=pipeline_sem,
+        uvicorn_log_config=uvicorn_log_config,
+    )
+
+    if open_browser:
+        import threading
+        import webbrowser
+
+        def _open():
+            import time
+            time.sleep(1.0)
+            webbrowser.open(f"http://localhost:{port}")
+        threading.Thread(target=_open, daemon=True).start()
 
     try:
         server.run()
