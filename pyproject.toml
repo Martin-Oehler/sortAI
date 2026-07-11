@@ -21,8 +21,12 @@ dependencies = [
 [project.scripts]
 sortai = "sortai.cli:main"
 
+[project.gui-scripts]
+sortai-tray = "sortai.tray:main"
+
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0"]
+tray = ["pystray>=0.19", "Pillow>=10"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

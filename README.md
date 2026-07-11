@@ -80,7 +80,7 @@ sortai [--config FILE] [--dry-run] [--review] COMMAND
 | `sortai ping` | Test LM Studio connection (load model, send hello) |
 | `sortai process PDF_FILE [--verbose]` | Run the full sort pipeline on a single PDF |
 | `sortai watch [--once] [--verbose]` | Watch inbox and auto-process new PDFs |
-| `sortai dashboard [--port PORT] [--no-browser]` | Start the review dashboard web server |
+| `sortai dashboard [--port PORT] [--no-browser] [--watch] [--log-file FILE]` | Start the review dashboard web server |
 | `sortai log [-n N]` | Show recent sort decisions |
 | `sortai report` | Regenerate the HTML audit report |
 | `sortai validate sample OUTPUT [-n N]` | Sample N PDFs from archive into a test set file |
@@ -122,6 +122,7 @@ The interactive dashboard shows a history log of past document classifications. 
    sortai dashboard
    # Opens http://localhost:8765 in your browser automatically
    ```
+   Pass `--watch` to also watch the inbox from the same process, and `--log-file logs/dashboard.log` to additionally write logs to a rotating file (10 MB × 3 files) — useful when running unattended.
 
 2. **Watch in review mode** (in another terminal):
    ```bash
@@ -159,18 +160,21 @@ auto_open_browser = true
 
 ## Autostart
 
-To run `sortai dashboard --watch --no-browser` automatically on startup, use the platform-specific files in [`deploy/`](deploy/README.md).
+To run the dashboard (with inbox watching) automatically on startup, use the platform-specific files in [`deploy/`](deploy/README.md).
 
-### Windows (Task Scheduler — recommended)
+### Windows (system tray app)
 
-1. Open `deploy/windows/sortai-task.xml` and replace the two `SORTAI_ROOT` placeholders with the absolute path to your project folder.
-2. Import the task:
+Runs the dashboard as a background app with a tray icon — no console window.
+
+1. Install the tray extras:
    ```bat
-   schtasks /Create /XML deploy\windows\sortai-task.xml /TN "sortai-dashboard"
+   pip install -e ".[tray]"
    ```
-3. The dashboard starts at every logon. Logs go to `logs\dashboard.log`.
-
-> **Headless / multi-user machines**: use `deploy/windows/install-nssm-service.bat` (requires [NSSM](https://nssm.cc/)) to register sortai as a Windows Service that runs even without a logged-in user.
+2. Install the autostart shortcut (and start immediately):
+   ```bat
+   powershell -ExecutionPolicy Bypass -File deploy\windows\install-autostart.ps1 -StartNow
+   ```
+3. A sortAI icon appears in the system tray with **Open Dashboard** and **Quit**. It starts at every logon; logs go to `logs\dashboard.log` (rotating, 10 MB × 3). Remove with `deploy\windows\uninstall-autostart.ps1`.
 
 ### Linux (systemd user service)
 

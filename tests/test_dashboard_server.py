@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sortai.config import Config
-from sortai.dashboard_server import _run_learning, create_app
+from sortai.dashboard_server import _run_learning, build_runtime, create_app, create_server
 from sortai.review_store import ReviewItem, ReviewStore, make_review_item
 
 
@@ -368,3 +368,65 @@ class TestAppIsolation:
             resp = client.get("/")
             assert resp.status_code == 200
             assert b"<html" in resp.content.lower()
+
+
+# ---------------------------------------------------------------------------
+# build_runtime — runtime assembly for CLI and tray app
+# ---------------------------------------------------------------------------
+
+
+class TestBuildRuntime:
+    def test_port_fallback_to_config(self, cfg: Config):
+        cfg.dashboard.port = 9123
+        _store, port, watcher, sem = build_runtime(cfg)
+        assert port == 9123
+        assert watcher is None
+        assert sem is None
+
+    def test_explicit_port_wins(self, cfg: Config):
+        cfg.dashboard.port = 9123
+        _store, port, _watcher, _sem = build_runtime(cfg, port=4567)
+        assert port == 4567
+
+    def test_store_uses_queue_path(self, cfg: Config):
+        store, _port, _watcher, _sem = build_runtime(cfg)
+        assert isinstance(store, ReviewStore)
+        assert store._path == cfg.queue_path
+
+    def test_watch_creates_watcher_and_semaphore(self, cfg: Config):
+        store, _port, watcher, sem = build_runtime(cfg, watch=True)
+        assert watcher is not None
+        assert sem is not None
+        assert watcher._pipeline_sem is sem
+        assert watcher.review_mode is False
+        assert watcher.review_store is None  # only wired up in review mode
+
+    def test_watch_review_mode_wires_store_into_watcher(self, cfg: Config):
+        store, _port, watcher, _sem = build_runtime(cfg, watch=True, review_mode=True)
+        assert watcher.review_mode is True
+        assert watcher.review_store is store
+
+
+# ---------------------------------------------------------------------------
+# create_server — the exact tray start/stop path, exercised headlessly
+# ---------------------------------------------------------------------------
+
+
+class TestCreateServer:
+    def test_start_serve_and_shutdown_via_handle_exit(self, cfg: Config, store: ReviewStore):
+        import signal
+        import urllib.request
+
+        server = create_server(cfg, store, port=0, uvicorn_log_config=None)
+        thread = threading.Thread(target=server.run, name="test-uvicorn")
+        thread.start()
+        try:
+            assert _wait_for(lambda: server.started, timeout=10)
+            port = server.servers[0].sockets[0].getsockname()[1]
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/queue", timeout=5) as resp:
+                assert resp.status == 200
+                assert resp.read() == b"[]"
+        finally:
+            server.handle_exit(signal.SIGINT, None)
+            thread.join(timeout=10)
+        assert not thread.is_alive()
