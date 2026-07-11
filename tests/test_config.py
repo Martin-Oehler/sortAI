@@ -92,9 +92,9 @@ class TestReportPath:
         cfg = make_cfg(tmp_path, log_file=tmp_path / "logs" / "audit.jsonl")
         assert cfg.report_path == tmp_path / "logs" / "audit_report.html"
 
-    def test_matches_file_ops_html_path(self, tmp_path: Path):
-        """Config.report_path must agree with the path file_ops actually writes."""
-        from sortai.file_ops import _html_path
+    def test_matches_report_html_path(self, tmp_path: Path):
+        """Config.report_path must agree with the path report.py actually writes."""
+        from sortai.report import _html_path
 
         cfg = make_cfg(tmp_path)
         assert cfg.report_path == _html_path(cfg.log_file)

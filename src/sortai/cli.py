@@ -196,7 +196,8 @@ def process_pdf(ctx: click.Context, pdf_file: Path, verbose: bool) -> None:
 @click.pass_context
 def show_log(ctx: click.Context, count: int) -> None:
     """Show recent sort decisions from the log."""
-    from sortai.file_ops import dest_label, load_jsonl_entries
+    from sortai.file_ops import load_jsonl_entries
+    from sortai.report import dest_label
 
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     log_path = cfg.log_file
@@ -242,7 +243,7 @@ def show_log(ctx: click.Context, count: int) -> None:
 @click.pass_context
 def generate_report(ctx: click.Context) -> None:
     """Regenerate the HTML audit report from the existing JSONL log."""
-    from sortai.file_ops import render_html_report
+    from sortai.report import render_html_report
 
     cfg = _load_config(ctx.obj["config_path"], ctx.obj["dry_run"], ctx.obj["review_mode"])
     log_path = cfg.log_file
