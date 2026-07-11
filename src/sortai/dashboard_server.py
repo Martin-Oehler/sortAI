@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import threading as _threading
+import traceback
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 if TYPE_CHECKING:
     from sortai.config import Config
-    from sortai.review_store import ReviewStore
+    from sortai.review_store import ReviewItem, ReviewStore
+
 
 def _async_exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
     exc = context.get("exception")
@@ -24,30 +27,31 @@ def _async_exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> 
     loop.default_exception_handler(context)
 
 
-# Module-level state set by create_app().
-_cfg: "Config | None" = None
-_store: "ReviewStore | None" = None
-_sse_clients: list[asyncio.Queue] = []
-_loop: asyncio.AbstractEventLoop | None = None
-_pipeline_sem: _threading.Semaphore = _threading.Semaphore(1)
+def _log_exception(context: str) -> None:
+    """Report a swallowed background-thread exception to stderr."""
+    print(f"sortai dashboard: {context}:", file=sys.stderr)
+    traceback.print_exc()
 
 
-def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
-    global _cfg, _store
-    _cfg = cfg
-    _store = store
+def create_app(
+    cfg: "Config",
+    store: "ReviewStore",
+    watcher=None,
+    pipeline_sem: "_threading.Semaphore | None" = None,
+) -> FastAPI:
+    sse_clients: list[asyncio.Queue] = []
+    pipeline_sem = pipeline_sem or _threading.Semaphore(1)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         import threading
-        global _loop
-        _loop = asyncio.get_running_loop()
-        _loop.set_exception_handler(_async_exception_handler)
-        observer = _start_file_watcher()
+
+        app.state.loop = asyncio.get_running_loop()
+        app.state.loop.set_exception_handler(_async_exception_handler)
+        observer = _start_file_watcher(cfg, _broadcast)
 
         watcher_thread = None
         if watcher is not None:
-            watcher._pipeline_sem = _pipeline_sem
             watcher_thread = threading.Thread(
                 target=watcher.watch, daemon=True, name="sortai-watcher"
             )
@@ -65,6 +69,64 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
     app = FastAPI(title="sortAI Dashboard", lifespan=lifespan)
     app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
+    app.state.loop = None
+    app.state.sse_clients = sse_clients
+    app.state.pipeline_sem = pipeline_sem
+
+    # ------------------------------------------------------------------
+    # SSE broadcast
+    # ------------------------------------------------------------------
+
+    def _broadcast(event_type: str) -> None:
+        loop = app.state.loop
+        if loop is None:
+            return
+
+        async def _push() -> None:
+            for q in list(sse_clients):
+                await q.put(event_type)
+
+        asyncio.run_coroutine_threadsafe(_push(), loop)
+
+    # ------------------------------------------------------------------
+    # Source resolution shared by /reveal, /reveal-target, /api/reprocess
+    # and the file-serving routes.
+    # ------------------------------------------------------------------
+
+    def _get_queue_item(item_id) -> "ReviewItem":
+        try:
+            return store.get(item_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Item not found")
+
+    def _resolve_source(
+        item_type, item_id, log_idx, *, staged_statuses: tuple = ("pending",)
+    ) -> "tuple[Path, ReviewItem | None]":
+        """Resolve a file path from a queue item or a log-entry index.
+
+        Returns (path, item) — *item* is the ReviewItem for queue sources and
+        None for log sources. Raises HTTPException when resolution fails.
+        Queue items whose status is in *staged_statuses* resolve to their
+        staging path; otherwise the resolved (final) path is used.
+        """
+        if item_type == "queue":
+            item = _get_queue_item(item_id)
+            if item.status in staged_statuses:
+                return Path(item.staging_path), item
+            if item.resolved_path:
+                return Path(item.resolved_path), item
+            raise HTTPException(status_code=404, detail="No file path")
+        if item_type == "log":
+            from sortai.file_ops import load_jsonl_entries
+            entries = load_jsonl_entries(cfg.log_file)
+            if log_idx is None or log_idx < 0 or log_idx >= len(entries):
+                raise HTTPException(status_code=404, detail="Log entry not found")
+            new_path = entries[log_idx].get("new_path", "")
+            if not new_path:
+                raise HTTPException(status_code=404, detail="No file path in log entry")
+            return Path(new_path), None
+        raise HTTPException(status_code=400, detail="Invalid item type")
+
     # ------------------------------------------------------------------
     # Routes
     # ------------------------------------------------------------------
@@ -75,41 +137,24 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
 
     @app.get("/api/queue")
     def get_queue() -> list:
-        _store.reload()  # type: ignore[union-attr]
-        return [asdict(i) for i in _store.list_all()]  # type: ignore[union-attr]
+        store.reload()
+        return [asdict(i) for i in store.list_all()]
 
     @app.get("/api/log")
     def get_log() -> list:
         from sortai.file_ops import load_jsonl_entries
-        return load_jsonl_entries(_cfg.log_file)  # type: ignore[union-attr]
+        return load_jsonl_entries(cfg.log_file)
 
     @app.get("/files/queue/{item_id}")
     def serve_queue_file(item_id: str) -> FileResponse:
-        try:
-            item = _store.get(item_id)  # type: ignore[union-attr]
-        except KeyError:
-            raise HTTPException(status_code=404, detail="Item not found")
-        if item.status == "pending":
-            path = Path(item.staging_path)
-        elif item.resolved_path:
-            path = Path(item.resolved_path)
-        else:
-            raise HTTPException(status_code=404, detail="No file path")
+        path, _item = _resolve_source("queue", item_id, None)
         if not path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
         return FileResponse(str(path), media_type="application/pdf")
 
     @app.get("/files/log/{log_idx}")
     def serve_log_file(log_idx: int) -> FileResponse:
-        from sortai.file_ops import load_jsonl_entries
-        entries = load_jsonl_entries(_cfg.log_file)  # type: ignore[union-attr]
-        if log_idx < 0 or log_idx >= len(entries):
-            raise HTTPException(status_code=404, detail="Log entry not found")
-        entry = entries[log_idx]
-        new_path = entry.get("new_path", "")
-        if not new_path:
-            raise HTTPException(status_code=404, detail="No file path in log entry")
-        path = Path(new_path)
+        path, _item = _resolve_source("log", None, log_idx)
         if not path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
         return FileResponse(str(path), media_type="application/pdf")
@@ -120,33 +165,7 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
         import subprocess
 
         data = await request.json()
-        item_type = data.get("type")
-        item_id = data.get("id")
-        log_idx = data.get("log_idx")
-
-        if item_type == "queue":
-            try:
-                item = _store.get(item_id)  # type: ignore[union-attr]
-            except KeyError:
-                raise HTTPException(status_code=404, detail="Item not found")
-            if item.status == "pending":
-                path = Path(item.staging_path)
-            elif item.resolved_path:
-                path = Path(item.resolved_path)
-            else:
-                raise HTTPException(status_code=404, detail="No file path")
-        elif item_type == "log":
-            from sortai.file_ops import load_jsonl_entries
-            entries = load_jsonl_entries(_cfg.log_file)  # type: ignore[union-attr]
-            if log_idx is None or log_idx < 0 or log_idx >= len(entries):
-                raise HTTPException(status_code=404, detail="Log entry not found")
-            entry = entries[log_idx]
-            new_path = entry.get("new_path", "")
-            if not new_path:
-                raise HTTPException(status_code=404, detail="No file path in log entry")
-            path = Path(new_path)
-        else:
-            raise HTTPException(status_code=400, detail="Invalid item type")
+        path, _item = _resolve_source(data.get("type"), data.get("id"), data.get("log_idx"))
 
         import os
         path = Path(os.path.abspath(path))
@@ -177,28 +196,16 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
         log_idx = data.get("log_idx")
 
         if item_type == "queue":
-            try:
-                item = _store.get(item_id)  # type: ignore[union-attr]
-            except KeyError:
-                raise HTTPException(status_code=404, detail="Item not found")
+            item = _get_queue_item(item_id)
             if item.status in ("pending", "reprocessing"):
-                folder = Path(_cfg.archive) / item.proposed_folder  # type: ignore[union-attr]
+                folder = Path(cfg.archive) / item.proposed_folder
             elif item.resolved_path:
                 folder = Path(item.resolved_path).parent
             else:
                 raise HTTPException(status_code=404, detail="No target path")
-        elif item_type == "log":
-            from sortai.file_ops import load_jsonl_entries
-            entries = load_jsonl_entries(_cfg.log_file)  # type: ignore[union-attr]
-            if log_idx is None or log_idx < 0 or log_idx >= len(entries):
-                raise HTTPException(status_code=404, detail="Log entry not found")
-            entry = entries[log_idx]
-            new_path = entry.get("new_path", "")
-            if not new_path:
-                raise HTTPException(status_code=404, detail="No file path in log entry")
-            folder = Path(new_path).parent
         else:
-            raise HTTPException(status_code=400, detail="Invalid item type")
+            path, _item = _resolve_source(item_type, item_id, log_idx)
+            folder = path.parent
 
         import os
         folder = Path(os.path.abspath(folder))
@@ -230,47 +237,25 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
         item_id = data.get("id")
         log_idx = data.get("log_idx")
         hint = (data.get("hint") or "").strip() or None
-        original_item_id: str | None = None
 
-        if item_type == "queue":
-            try:
-                item = _store.get(item_id)  # type: ignore[union-attr]
-            except KeyError:
-                raise HTTPException(status_code=404, detail="Item not found")
-            if item.status in ("pending", "reprocessing"):
-                source_path = Path(item.staging_path)
-            elif item.resolved_path:
-                source_path = Path(item.resolved_path)
-            else:
-                raise HTTPException(status_code=404, detail="No file path")
-            original_filename = item.original_filename
-            original_item_id = item_id
-        elif item_type == "log":
-            from sortai.file_ops import load_jsonl_entries
-            entries = load_jsonl_entries(_cfg.log_file)  # type: ignore[union-attr]
-            if log_idx is None or log_idx < 0 or log_idx >= len(entries):
-                raise HTTPException(status_code=404, detail="Log entry not found")
-            entry = entries[log_idx]
-            new_path = entry.get("new_path", "")
-            if not new_path:
-                raise HTTPException(status_code=404, detail="No file path in log entry")
-            source_path = Path(new_path)
-            original_filename = source_path.name
-        else:
-            raise HTTPException(status_code=400, detail="Invalid item type")
+        source_path, item = _resolve_source(
+            item_type, item_id, log_idx, staged_statuses=("pending", "reprocessing")
+        )
+        original_filename = item.original_filename if item is not None else source_path.name
+        original_item_id: str | None = item_id if item_type == "queue" else None
 
         source_path = source_path.resolve()
         if not source_path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
 
         if original_item_id:
-            _store.mark_reprocessing(original_item_id)  # type: ignore[union-attr]
+            store.mark_reprocessing(original_item_id)
             _broadcast("queue_updated")
 
         original_proposed_folder: str | None = None
         if original_item_id:
             try:
-                _original_item = _store.get(original_item_id)  # type: ignore[union-attr]
+                _original_item = store.get(original_item_id)
                 original_proposed_folder = _original_item.proposed_folder
             except KeyError:
                 pass
@@ -279,48 +264,45 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
             from sortai.llm_client import LMStudioClient
             from sortai.processor import process_document
 
-            client = LMStudioClient.from_config(_cfg)  # type: ignore[arg-type]
+            client = LMStudioClient.from_config(cfg)
             try:
                 outcome = process_document(
-                    _cfg,  # type: ignore[arg-type]
+                    cfg,
                     client,
                     source_path,
-                    review_store=_store,
+                    review_store=store,
                     user_hint=hint,
-                    pipeline_sem=_pipeline_sem,
+                    pipeline_sem=pipeline_sem,
                     dry_run=False,
                     original_filename=original_filename,
                     previous_proposed_folder=original_proposed_folder,
                 )
             except Exception:
+                _log_exception(f"reprocessing of {source_path.name} failed")
                 outcome = None
             if outcome is None or outcome.status == "error":
                 if original_item_id:
-                    _store.mark_pending(original_item_id)  # type: ignore[union-attr]
+                    store.mark_pending(original_item_id)
                     _broadcast("queue_updated")
                 return
 
             if original_item_id:
-                _store.remove(original_item_id)  # type: ignore[union-attr]
+                store.remove(original_item_id)
             _broadcast("queue_updated")
 
         threading.Thread(target=_run_pipeline, daemon=True).start()
-        from fastapi.responses import JSONResponse as _JSONResponse
-        return _JSONResponse({"status": "reprocessing"}, status_code=202)
+        return JSONResponse({"status": "reprocessing"}, status_code=202)
 
     @app.post("/api/accept/{item_id}")
     def accept_item(item_id: str) -> JSONResponse:
         import threading as _t
-        _store.reload()  # type: ignore[union-attr]
-        try:
-            item = _store.get(item_id)  # type: ignore[union-attr]
-        except KeyError:
-            raise HTTPException(status_code=404, detail="Item not found")
+        store.reload()
+        item = _get_queue_item(item_id)
         if item.status != "pending":
             raise HTTPException(status_code=400, detail="Item is not pending")
 
         from sortai.file_ops import log_decision, move_file
-        dest_dir = _cfg.archive / item.proposed_folder  # type: ignore[union-attr]
+        dest_dir = cfg.archive / item.proposed_folder
         src = Path(item.staging_path)
         dest = move_file(src=src, dest_dir=dest_dir, new_name=item.proposed_filename, dry_run=False)
         log_decision(
@@ -328,17 +310,17 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
             dest=dest,
             summary=item.summary,
             dry_run=False,
-            log_path=_cfg.log_file,  # type: ignore[union-attr]
-            archive_root=_cfg.archive,  # type: ignore[union-attr]
+            log_path=cfg.log_file,
+            archive_root=cfg.archive,
             interactions=item.interactions,
         )
-        _store.mark_accepted(item_id, str(dest))  # type: ignore[union-attr]
+        store.mark_accepted(item_id, str(dest))
         _broadcast("queue_updated")
 
-        if item.user_hint and item.previous_proposed_folder and _cfg.enable_memory:
+        if item.user_hint and item.previous_proposed_folder and cfg.enable_memory:
             _t.Thread(
                 target=_run_learning,
-                args=(item, str(dest), _cfg),
+                args=(item, str(dest), cfg, pipeline_sem, _broadcast),
                 daemon=True,
                 name="sortai-learn",
             ).start()
@@ -347,30 +329,27 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
 
     @app.post("/api/reject/{item_id}")
     def reject_item(item_id: str) -> JSONResponse:
-        _store.reload()  # type: ignore[union-attr]
-        try:
-            item = _store.get(item_id)  # type: ignore[union-attr]
-        except KeyError:
-            raise HTTPException(status_code=404, detail="Item not found")
+        store.reload()
+        item = _get_queue_item(item_id)
         if item.status != "pending":
             raise HTTPException(status_code=400, detail="Item is not pending")
 
         from sortai.file_ops import move_file
         src = Path(item.staging_path)
-        dest = move_file(src=src, dest_dir=_cfg.rejected_dir, new_name=item.original_filename, dry_run=False)  # type: ignore[union-attr]
-        _store.mark_rejected(item_id, str(dest))  # type: ignore[union-attr]
+        dest = move_file(src=src, dest_dir=cfg.rejected_dir, new_name=item.original_filename, dry_run=False)
+        store.mark_rejected(item_id, str(dest))
         _broadcast("queue_updated")
         return JSONResponse({"status": "rejected", "resolved_path": str(dest)})
 
     @app.get("/api/memory")
     def get_memory() -> JSONResponse:
         from sortai.memory import load_rules
-        return JSONResponse({"rules": load_rules(_cfg.memory_path)})  # type: ignore[union-attr]
+        return JSONResponse({"rules": load_rules(cfg.memory_path)})
 
     @app.delete("/api/memory/{rule_idx}")
     def delete_memory_rule(rule_idx: int) -> JSONResponse:
         from sortai.memory import load_rules, save_rules
-        memory_path = _cfg.memory_path  # type: ignore[union-attr]
+        memory_path = cfg.memory_path
         if not memory_path.exists():
             raise HTTPException(status_code=404, detail="No memory file")
         rules = load_rules(memory_path)
@@ -384,7 +363,7 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
     @app.get("/api/events")
     async def events(request: Request) -> StreamingResponse:
         q: asyncio.Queue = asyncio.Queue()
-        _sse_clients.append(q)
+        sse_clients.append(q)
 
         async def generate():
             try:
@@ -398,8 +377,8 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
                         break
                     yield f"event: {event}\ndata: {{}}\n\n"
             finally:
-                if q in _sse_clients:
-                    _sse_clients.remove(q)
+                if q in sse_clients:
+                    sse_clients.remove(q)
 
         return StreamingResponse(
             generate(),
@@ -411,24 +390,24 @@ def create_app(cfg: "Config", store: "ReviewStore", watcher=None) -> FastAPI:
 
 
 # ------------------------------------------------------------------
-# File watcher + SSE broadcast
+# File watcher (log/queue change notifications)
 # ------------------------------------------------------------------
 
 
-def _start_file_watcher():
+def _start_file_watcher(cfg: "Config", broadcast: Callable[[str], None]):
     from watchdog.events import FileSystemEventHandler
     from watchdog.observers import Observer
 
-    log_dir = _cfg.log_file.parent  # type: ignore[union-attr]
+    log_dir = cfg.log_file.parent
     log_dir.mkdir(parents=True, exist_ok=True)
 
     class _Handler(FileSystemEventHandler):
         def _notify(self, path: str) -> None:
             name = Path(path).name
-            if name == _cfg.log_file.name:  # type: ignore[union-attr]
-                _broadcast("log_updated")
-            elif name == _cfg.queue_path.name:  # type: ignore[union-attr]
-                _broadcast("queue_updated")
+            if name == cfg.log_file.name:
+                broadcast("log_updated")
+            elif name == cfg.queue_path.name:
+                broadcast("queue_updated")
 
         def on_modified(self, event) -> None:  # type: ignore[override]
             if not event.is_directory:
@@ -448,18 +427,13 @@ def _start_file_watcher():
     return observer
 
 
-def _broadcast(event_type: str) -> None:
-    if _loop is None:
-        return
-
-    async def _push() -> None:
-        for q in list(_sse_clients):
-            await q.put(event_type)
-
-    asyncio.run_coroutine_threadsafe(_push(), _loop)
-
-
-def _run_learning(item, resolved_path: str, cfg) -> None:
+def _run_learning(
+    item,
+    resolved_path: str,
+    cfg,
+    pipeline_sem: _threading.Semaphore,
+    broadcast: Callable[[str], None],
+) -> None:
     """Background thread: learn from a user correction, then consolidate memory."""
     from sortai.file_ops import log_memory_update
     from sortai.llm_client import LMStudioClient
@@ -472,7 +446,7 @@ def _run_learning(item, resolved_path: str, cfg) -> None:
         doc_text = ""
 
     client = LMStudioClient.from_config(cfg)
-    _pipeline_sem.acquire()
+    pipeline_sem.acquire()
     try:
         client.load_model()
 
@@ -488,7 +462,7 @@ def _run_learning(item, resolved_path: str, cfg) -> None:
         consolidate_interactions: list = []
         if rule:
             consolidate_interactions = consolidate_memory(client, cfg.memory_path, rule)
-            _broadcast("memory_updated")
+            broadcast("memory_updated")
 
         all_interactions = learn_interactions + consolidate_interactions
         log_memory_update(
@@ -500,11 +474,11 @@ def _run_learning(item, resolved_path: str, cfg) -> None:
             log_path=cfg.log_file,
             interactions=all_interactions,
         )
-        _broadcast("log_updated")
+        broadcast("log_updated")
     except Exception:
-        pass
+        _log_exception(f"learning from correction of {item.original_filename} failed")
     finally:
-        _pipeline_sem.release()
+        pipeline_sem.release()
 
 
 # ------------------------------------------------------------------
@@ -512,12 +486,19 @@ def _run_learning(item, resolved_path: str, cfg) -> None:
 # ------------------------------------------------------------------
 
 
-def run(cfg: "Config", store: "ReviewStore", port: int, open_browser: bool, watcher=None) -> None:
+def run(
+    cfg: "Config",
+    store: "ReviewStore",
+    port: int,
+    open_browser: bool,
+    watcher=None,
+    pipeline_sem: "_threading.Semaphore | None" = None,
+) -> None:
     import webbrowser
 
     import uvicorn
 
-    app = create_app(cfg, store, watcher=watcher)
+    app = create_app(cfg, store, watcher=watcher, pipeline_sem=pipeline_sem)
 
     if open_browser:
         import threading
@@ -533,12 +514,13 @@ def run(cfg: "Config", store: "ReviewStore", port: int, open_browser: bool, watc
     _original_handle_exit = server.handle_exit
 
     def _handle_exit(sig, frame):
-        if _loop is not None:
+        loop = app.state.loop
+        if loop is not None:
             async def _close_sse():
-                for q in list(_sse_clients):
+                for q in list(app.state.sse_clients):
                     await q.put(None)
             try:
-                fut = asyncio.run_coroutine_threadsafe(_close_sse(), _loop)
+                fut = asyncio.run_coroutine_threadsafe(_close_sse(), loop)
                 fut.result(timeout=2.0)
             except Exception:
                 pass

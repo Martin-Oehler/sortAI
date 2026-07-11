@@ -298,17 +298,35 @@ def start_dashboard(ctx: click.Context, port: int | None, no_browser: bool, watc
     open_browser = (not no_browser) and cfg.dashboard.auto_open_browser
 
     watcher = None
+    pipeline_sem = None
     if watch_mode:
+        import threading
+
         from sortai.watcher import Watcher
         effective_review = ctx.obj["review_mode"] or cfg.review_mode
-        watcher = Watcher(cfg, review_mode=effective_review, review_store=review_store if effective_review else None)
+        # Shared with the dashboard so reprocess/learning and the watcher
+        # never run the LLM pipeline concurrently.
+        pipeline_sem = threading.Semaphore(1)
+        watcher = Watcher(
+            cfg,
+            review_mode=effective_review,
+            review_store=review_store if effective_review else None,
+            pipeline_sem=pipeline_sem,
+        )
         console.print(f"[yellow]Watching[/yellow] {cfg.inbox} for new PDFs.")
 
     console.print(
         f"[bold green]Dashboard[/bold green] starting at "
         f"[cyan]http://localhost:{effective_port}[/cyan] — press Ctrl-C to stop."
     )
-    run_dashboard(cfg, review_store, port=effective_port, open_browser=open_browser, watcher=watcher)
+    run_dashboard(
+        cfg,
+        review_store,
+        port=effective_port,
+        open_browser=open_browser,
+        watcher=watcher,
+        pipeline_sem=pipeline_sem,
+    )
 
 
 # ---------------------------------------------------------------------------
